@@ -29,7 +29,7 @@ pub enum RequestData<'a> {
 impl Request {
     pub fn parse_from_string(request_string: &String) -> Result<Self, ErrorKind> {
         let general_regex = Regex::new(
-            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(([A-Za-z0-9\-_]+\.[[:alnum:]]+)|([A-Za-z0-9\-_]+))(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
+            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(([A-Za-z0-9\-_]+\.[[:alnum:]]+)|([A-Za-z0-9\-_]+))(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
         ).unwrap();
 
         if !general_regex.is_match(request_string.as_str()) {
@@ -105,7 +105,7 @@ pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &O
         Ok(mut f) => {
             let date = get_current_date();
             let response_headers = HashMap::from([
-                ("Server", "stary najebany"),
+                // ("Server", "stary najebany"),
                 ("Connection", "keep-alive"),
                 ("Keep-Alive", "timeout=5, max=100"),
                 ("Date", date.as_str())]);
@@ -155,7 +155,7 @@ pub async fn handle_post(stream: TcpStream, resource: &String, headers: &HashMap
 
 pub async fn handle_options(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let date = get_current_date();
-    let response_headers = HashMap::from([("Server", "stary najebany"),
+    let response_headers = HashMap::from([// ("Server", "stary najebany"),
                                                                 ("Accept", "GET, HEAD, POST, OPTIONS"),
                                                                 ("Connection", "keep-alive"),
                                                                 ("Keep-Alive", "timeout=5, max=100"),

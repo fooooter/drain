@@ -56,7 +56,7 @@ pub async fn select(stream: &mut TcpStream, request: RequestData<'_>) -> Result<
 
     let date = get_current_date();
     let mut response_headers = HashMap::from([
-        ("Server", "stary najebany"),
+        // ("Server", "stary najebany"),
         ("Connection", "keep-alive"),
         ("Keep-Alive", "timeout=5, max=100"),
         ("Date", date.as_str()),

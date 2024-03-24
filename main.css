@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500&display=swap');
+
+* {
+    font-family: 'Afacad', sans-serif;
+    font-size: large;
+}
+
+#big-text {
+    font-size: larger;
+    font-weight: bold;
+}
+
+label {
+    display: block;
+}
+
+body {
+    width: 100%;
+    align-items: center;
+    text-decoration: none;
+}
+#login-form {
+    width: 50%;
+    margin: 2% auto auto;
+}
+
+input, a {
+    padding: 0.5em;
+    border: 1px solid darkblue;
+    border-radius: 10px;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    margin-right: 0.5em;
+}
+
+.inline {
+    display: inline;
+}
+
+table, th, td {
+    border: 1px solid #000000;
+}

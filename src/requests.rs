@@ -154,7 +154,7 @@ pub async fn handle_post(stream: TcpStream, resource: &String, headers: &HashMap
 
 pub async fn handle_options(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let date = get_current_date();
-    let response_headers = HashMap::from([// ("Server", "stary najebany"),
+    let response_headers = HashMap::from([
                                                                 ("Accept", "GET, HEAD, POST, OPTIONS"),
                                                                 ("Connection", "keep-alive"),
                                                                 ("Keep-Alive", "timeout=5, max=100"),

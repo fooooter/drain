@@ -26,7 +26,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
                 _ => {
                     let date = get_current_date();
                     let response_headers = HashMap::from([
-                        // ("Server", "stary najebany"),
+                        
                         ("Accept", "GET, HEAD, POST, OPTIONS"),
                         ("Connection", "keep-alive"),
                         ("Keep-Alive", "timeout=5, max=100"),
@@ -40,7 +40,6 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
         Err(e) => {
             let date = get_current_date();
             let response_headers = HashMap::from([
-                ("Server", "stary najebany"),
                 ("Connection", "keep-alive"),
                 ("Keep-Alive", "timeout=5, max=100"),
                 ("Date", date.as_str())]);

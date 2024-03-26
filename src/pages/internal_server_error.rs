@@ -20,7 +20,6 @@ r#"<html lang="pl">
 
     let date = get_current_date();
     let response_headers = HashMap::from([
-        // ("Server", "stary najebany"),
         ("Connection", "keep-alive"),
         ("Keep-Alive", "timeout=5, max=100"),
         ("Date", date.as_str()),

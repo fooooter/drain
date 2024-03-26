@@ -14,7 +14,6 @@ pub async fn not_found(mut stream: &mut TcpStream, headers: &HashMap<String, Str
 
             let date = get_current_date();
             let response_headers = HashMap::from([
-                // ("Server", "stary najebany"),
                 ("Connection", "keep-alive"),
                 ("Keep-Alive", "timeout=5, max=100"),
                 ("Date", date.as_str()),

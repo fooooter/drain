@@ -1,14 +1,14 @@
 use tokio::net::*;
-use crate::util::{get_current_date, send_response};
+use crate::util::send_response;
 use sqlx::mysql::MySqlPoolOptions;
 use std::collections::HashMap;
 use tokio::io::ErrorKind;
-use crate::db::DATABASE_URL;
+use crate::config::CONFIG;
 use crate::requests::RequestData;
 
 pub async fn select(stream: &mut TcpStream, request: RequestData<'_>) -> Result<(), ErrorKind> {
     let maria_pool = MySqlPoolOptions::new()
-        .connect(DATABASE_URL)
+        .connect(CONFIG.db_url)
         .await
         .unwrap();
 
@@ -54,11 +54,9 @@ pub async fn select(stream: &mut TcpStream, request: RequestData<'_>) -> Result<
                 </body>
             </html>"#);
 
-    let date = get_current_date();
     let mut response_headers = HashMap::from([
         ("Connection", "keep-alive"),
         ("Keep-Alive", "timeout=5, max=100"),
-        ("Date", date.as_str()),
         ("Content-Type", "text/html; charset=utf-8")]);
 
     match request {

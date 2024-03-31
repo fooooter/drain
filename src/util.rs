@@ -75,28 +75,38 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, headers: Option<
     let status_line = format!("HTTP/1.1 {status} {status_text}\r\n");
     response.push_str(&*status_line);
 
+    let date = get_current_date();
+
     match (headers, content) {
         (Some(h), Some(s)) => {
             let mut headers_clone = h.clone();
             headers_clone.remove("Content-Length");
+            headers_clone.remove("Date");
 
             for (k, v) in headers_clone {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let content_length_header = format!("Content-Length: {}\r\n\r\n", s.len());
-            response.push_str(&*format!("{content_length_header}{s}"));
+            let content_length_header = format!("Content-Length: {}\r\n", s.len());
+            let date_header = format!("Date: {}\r\n\r\n", date.as_str());
+            response.push_str(&*content_length_header);
+            response.push_str(&*format!("{date_header}{s}"));
         },
         (None, Some(s)) => {
-            let content_length_header = format!("Content-Length: {}\r\n\r\n", s.len());
-            response.push_str(&*format!("{content_length_header}{s}"));
+            let content_length_header = format!("Content-Length: {}\r\n", s.len());
+            let date_header = format!("Date: {}\r\n\r\n", date.as_str());
+            response.push_str(&*content_length_header);
+            response.push_str(&*format!("{date_header}{s}"));
         },
         (Some(h), None) => {
             let mut headers_clone = h.clone();
+            headers_clone.remove("Date");
 
             for (k, v) in headers_clone {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
+            let date_header = format!("Date: {}\r\n\r\n", date.as_str());
+            response.push_str(&*date_header);
         },
         _ => {}
     }

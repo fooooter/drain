@@ -103,11 +103,9 @@ pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &O
 
     match file {
         Ok(mut f) => {
-            let date = get_current_date();
             let response_headers = HashMap::from([
                 ("Connection", "keep-alive"),
-                ("Keep-Alive", "timeout=5, max=100"),
-                ("Date", date.as_str())]);
+                ("Keep-Alive", "timeout=5, max=100")]);
 
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
             send_response(&mut stream, 200, Some(response_headers), Some(content)).await?;
@@ -153,12 +151,9 @@ pub async fn handle_post(stream: TcpStream, resource: &String, headers: &HashMap
 }
 
 pub async fn handle_options(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
-    let date = get_current_date();
-    let response_headers = HashMap::from([
-                                                                ("Accept", "GET, HEAD, POST, OPTIONS"),
+    let response_headers = HashMap::from([("Accept", "GET, HEAD, POST, OPTIONS"),
                                                                 ("Connection", "keep-alive"),
-                                                                ("Keep-Alive", "timeout=5, max=100"),
-                                                                ("Date", date.as_str())]);
+                                                                ("Keep-Alive", "timeout=5, max=100")]);
     send_response(&mut stream, 204, Some(response_headers), None).await?;
     Ok(())
 }

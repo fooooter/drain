@@ -1,1 +1,0 @@
-pub(crate) static DATABASE_URL: &str = "mariadb://localhost:3306/baza_testowa";

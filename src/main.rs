@@ -1,7 +1,7 @@
 mod requests;
 mod util;
 mod pages;
-mod db;
+mod config;
 
 use std::collections::HashMap;
 use tokio::net::*;
@@ -24,13 +24,10 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
                 Post {resource, headers, data} => Ok(handle_post(stream, &resource, &headers, &data).await),
                 Options {resource, headers} => handle_options(stream, &resource, &headers).await,
                 _ => {
-                    let date = get_current_date();
                     let response_headers = HashMap::from([
-                        
                         ("Accept", "GET, HEAD, POST, OPTIONS"),
                         ("Connection", "keep-alive"),
-                        ("Keep-Alive", "timeout=5, max=100"),
-                        ("Date", date.as_str())]);
+                        ("Keep-Alive", "timeout=5, max=100")]);
 
                     send_response(&mut stream, 405, Some(response_headers), None).await?;
                     Ok(())
@@ -38,11 +35,9 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
             }
         },
         Err(e) => {
-            let date = get_current_date();
             let response_headers = HashMap::from([
                 ("Connection", "keep-alive"),
-                ("Keep-Alive", "timeout=5, max=100"),
-                ("Date", date.as_str())]);
+                ("Keep-Alive", "timeout=5, max=100")]);
 
             send_response(&mut stream, 400, Some(response_headers), None).await?;
             Err(e)

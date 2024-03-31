@@ -3,7 +3,7 @@ use tokio::net::*;
 use tokio::io::{AsyncWriteExt, ErrorKind};
 use tokio::fs::File;
 use crate::pages::internal_server_error::internal_server_error;
-use crate::util::{read_to_string_wrapper, send_response, get_current_date};
+use crate::util::{read_to_string_wrapper, send_response};
 
 pub async fn not_found(mut stream: &mut TcpStream, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let mut content = String::new();
@@ -12,11 +12,9 @@ pub async fn not_found(mut stream: &mut TcpStream, headers: &HashMap<String, Str
         Ok(mut f) => {
             read_to_string_wrapper(&mut f, &mut content, stream, headers).await;
 
-            let date = get_current_date();
             let response_headers = HashMap::from([
                 ("Connection", "keep-alive"),
                 ("Keep-Alive", "timeout=5, max=100"),
-                ("Date", date.as_str()),
                 ("Content-Type", "text/html; charset=utf-8")]);
 
             if let Err(e) = send_response(&mut stream, 404, Some(response_headers), Some(content)).await {

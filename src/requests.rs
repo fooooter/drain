@@ -29,7 +29,7 @@ pub enum RequestData<'a> {
 impl Request {
     pub fn parse_from_string(request_string: &String) -> Result<Self, ErrorKind> {
         let general_regex = Regex::new(
-            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(([A-Za-z0-9\-_]+\.[[:alnum:]]+)|([A-Za-z0-9\-_]+))(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
+            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /((([A-Za-z0-9\-_]+\.[[:alnum:]]+)|([A-Za-z0-9\-_]+))(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
         ).unwrap();
 
         if !general_regex.is_match(request_string.as_str()) {
@@ -86,14 +86,14 @@ impl Request {
 
 pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &Option<HashMap<String, String>>, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
-    resource_clone.remove(resource_clone.find('/').unwrap());
+    resource_clone.remove(0);
 
     match resource_clone.as_str() {
         "select" => return Ok(select(&mut stream, Get {params: parameters, headers}).await?),
         _ => ()
     }
 
-    if resource_clone == "" {
+    if resource_clone.is_empty() {
         resource_clone = "index".to_string();
     }
 
@@ -119,14 +119,14 @@ pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &O
 
 pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
-    resource_clone.remove(resource_clone.find('/').unwrap());
+    resource_clone.remove(0);
 
     match resource_clone.as_str() {
         "select" => select(&mut stream, Head {headers}).await?,
         _ => {}
     }
 
-    if resource_clone == "" {
+    if resource_clone.is_empty() {
         resource_clone = "index".to_string();
     }
 
@@ -137,7 +137,14 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     match file {
         Ok(mut f) => {
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
-            send_response(&mut stream, 200, None, None).await?;
+            let content_length = content.len().to_string();
+
+            let response_headers = HashMap::from([
+                ("Connection", "keep-alive"),
+                ("Keep-Alive", "timeout=5, max=100"),
+                ("Content-Length", &*content_length)]);
+
+            send_response(&mut stream, 200, Some(response_headers), None).await?;
             Ok(())
         },
         Err(_) => {

@@ -6,7 +6,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::*;
 use crate::pages::internal_server_error::internal_server_error;
 
-pub async fn send_response(stream: &mut TcpStream, status: i32, headers: Option<HashMap<&str, &str>>, content: Option<String>) -> Result<(), ErrorKind> {
+pub async fn send_response(stream: &mut TcpStream, status: i32, response_headers: Option<HashMap<&str, &str>>, content: Option<String>) -> Result<(), ErrorKind> {
     let mut response = String::new();
     let status_text = match status {
         100 => "Continue",
@@ -77,38 +77,39 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, headers: Option<
 
     let date = get_current_date();
 
-    match (headers, content) {
-        (Some(h), Some(s)) => {
-            let mut headers_clone = h.clone();
-            headers_clone.remove("Content-Length");
-            headers_clone.remove("Date");
+    let mut response_headers_clone = response_headers.clone();
 
-            for (k, v) in headers_clone {
+    if let Some(ref mut h) = response_headers_clone {
+        h.remove("Date");
+    }
+
+    let date_header = format!("Date: {}\r\n", date);
+    response.push_str(&*date_header);
+
+    match (response_headers_clone, content) {
+        (Some(ref mut h), Some(c)) => {
+            h.remove("Content-Length");
+
+            for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let content_length_header = format!("Content-Length: {}\r\n", s.len());
-            let date_header = format!("Date: {}\r\n\r\n", date.as_str());
-            response.push_str(&*content_length_header);
-            response.push_str(&*format!("{date_header}{s}"));
+            let content_length_header = format!("Content-Length: {}\r\n\r\n", c.len());
+            response.push_str(&*format!("{content_length_header}{c}"));
         },
-        (None, Some(s)) => {
-            let content_length_header = format!("Content-Length: {}\r\n", s.len());
-            let date_header = format!("Date: {}\r\n\r\n", date.as_str());
-            response.push_str(&*content_length_header);
-            response.push_str(&*format!("{date_header}{s}"));
+        (None, Some(c)) => {
+            let content_length_header = format!("Content-Length: {}\r\n\r\n", c.len());
+            response.push_str(&*format!("{content_length_header}{c}"));
         },
-        (Some(h), None) => {
-            let mut headers_clone = h.clone();
-            headers_clone.remove("Date");
-
-            for (k, v) in headers_clone {
+        (Some(ref mut h), None) => {
+            for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
-            let date_header = format!("Date: {}\r\n\r\n", date.as_str());
-            response.push_str(&*date_header);
+            response.push_str("\r\n");
         },
-        _ => {}
+        (None, None) => {
+            response.push_str("\r\n");
+        }
     }
 
     if let Err(e1) = stream.write_all(response.as_bytes()).await {

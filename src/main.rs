@@ -6,10 +6,10 @@ mod config;
 use std::collections::HashMap;
 use tokio::net::*;
 use tokio::*;
+use tokio::io::ErrorKind;
 use requests::Request::{Get, Head, Options, Post};
 use requests::*;
-use util::*;
-use tokio::io::ErrorKind;
+use crate::util::*;
 
 async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
     let mut request_string = String::new();

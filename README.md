@@ -1,11 +1,11 @@
-Progress done so far (and TODO in a future):
-[✔]   	GET
-[✔]   	OPTIONS
-[✔]   	HEAD
-[——]   	POST
-[✔]   	Database connection
-[  ]		Auto-detect MIME types
-[  ]		Cookies
-[  ]		Sessions
-[✔]		Config
-[  ]		Compression
+<h3>Progress done so far (and TODO in a future):</h3>
+[✔]   	GET<br>
+[✔]   	OPTIONS<br>
+[✔]   	HEAD<br>
+[—]   	POST<br>
+[✔]   	Database connection<br>
+[✖]		Auto-detect MIME types<br>
+[✖]		Cookies<br>
+[✖]		Sessions<br>
+[✔]		Config<br>
+[✖]		Compression<br>

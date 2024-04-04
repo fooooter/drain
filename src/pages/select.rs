@@ -33,7 +33,7 @@ pub async fn select(stream: &mut TcpStream, request: RequestData<'_>) -> Result<
                         "#
     );
     for x in records {
-        content.push_str(format!(
+        content.push_str(&*format!(
         r#"             <tr>
                             <td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>
                         </tr>"#, x.id,
@@ -47,29 +47,24 @@ pub async fn select(stream: &mut TcpStream, request: RequestData<'_>) -> Result<
             x.credit_rating.unwrap_or("None".to_string()),
             x.sales_rep_id.unwrap_or(0),
             x.region_id.unwrap_or(0),
-            x.comments.unwrap_or("None".to_string())).as_str());
+            x.comments.unwrap_or("None".to_string())));
     }
     content.push_str(
         r#"       </table>
                 </body>
             </html>"#);
 
-    let mut response_headers = HashMap::from([
-        ("Connection", "keep-alive"),
-        ("Keep-Alive", "timeout=5, max=100"),
-        ("Content-Type", "text/html; charset=utf-8")]);
-
     match request {
         RequestData::Get {..} => {
-            return send_response(stream, 200, Some(response_headers), Some(content)).await
+            return send_response(stream, 200, None, Some(content)).await
         },
         RequestData::Post {..} => {
             Ok(())
         },
         RequestData::Head {..} => {
             let content_length_string = content.len().to_string();
-            response_headers.insert("Content-Length", content_length_string.as_str());
-            return send_response(stream, 200, Some(response_headers), None).await
+            let content_length_header = HashMap::from(("Content-Length", content_length_string.as_str()));
+            return send_response(stream, 200, Some(content_length_header), None).await
         }
     }
 }

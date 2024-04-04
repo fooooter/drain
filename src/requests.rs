@@ -54,14 +54,21 @@ impl Request {
 
         let regex_headers = Regex::new(r#"^([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)$"#).unwrap();
 
-        let headers_iter = request_string.lines().skip(1).take_while(|x| { regex_headers.is_match(x)});
+        let headers_iter = request_string.lines().skip(1)
+            .take_while(|x| {
+                regex_headers.is_match(x)
+            });
+
         let mut headers: HashMap<String, String> = HashMap::new();
 
-        let data_iter = headers_iter.clone();
-
         for header in headers_iter {
-            headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 1..].to_string());
+            headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string());
         }
+
+        let data_iter = request_string.lines().skip(1)
+            .skip_while(|x| {
+                regex_headers.is_match(x)
+            });
 
         let mut data = String::new();
         for line in data_iter {
@@ -71,13 +78,13 @@ impl Request {
         let req = match req_type.trim() {
             "GET" => Self::Get {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "HEAD" => Self::Head {resource, headers},
-            "POST" => Self::Post {resource, headers, data},
-            "PUT" => Self::Put {resource, headers, data},
+            "POST" => Self::Post {resource, headers, data: if data.is_empty() {return Err(ErrorKind::InvalidInput)} else {data}},
+            "PUT" => Self::Put {resource, headers, data: if data.is_empty() {return Err(ErrorKind::InvalidInput)} else {data}},
             "DELETE" => Self::Delete {resource, headers},
             "CONNECT" => Self::Connect {resource, headers},
             "OPTIONS" => Self::Options {resource, headers},
             "TRACE" => Self::Trace {resource, headers},
-            "PATCH" => Self::Patch {resource, headers, data},
+            "PATCH" => Self::Patch {resource, headers, data: if data.is_empty() {return Err(ErrorKind::InvalidInput)} else {data}},
             _ => return Err(ErrorKind::InvalidInput)
         };
         Ok(req)
@@ -103,12 +110,8 @@ pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &O
 
     match file {
         Ok(mut f) => {
-            let response_headers = HashMap::from([
-                ("Connection", "keep-alive"),
-                ("Keep-Alive", "timeout=5, max=100")]);
-
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
-            send_response(&mut stream, 200, Some(response_headers), Some(content)).await?;
+            send_response(&mut stream, 200, None, Some(content)).await?;
             Ok(())
         },
         Err(_) => {
@@ -137,14 +140,11 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     match file {
         Ok(mut f) => {
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
-            let content_length = content.len().to_string();
 
-            let response_headers = HashMap::from([
-                ("Connection", "keep-alive"),
-                ("Keep-Alive", "timeout=5, max=100"),
-                ("Content-Length", &*content_length)]);
+            let content_length_string = content.len().to_string();
+            let content_length_header = HashMap::from(("Content-Length", &*content_length_string));
 
-            send_response(&mut stream, 200, Some(response_headers), None).await?;
+            send_response(&mut stream, 200, Some(content_length_header), None).await?;
             Ok(())
         },
         Err(_) => {
@@ -153,14 +153,38 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     }
 }
 
-pub async fn handle_post(stream: TcpStream, resource: &String, headers: &HashMap<String, String>, data: &String) {
+pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>, data: &String) -> Result<(), ErrorKind> {
+    let mut resource_clone = resource.clone();
+    resource_clone.remove(0);
 
+    match resource_clone.as_str() {
+        "select" => return Ok(select(&mut stream, Post {headers, data}).await?),
+        _ => ()
+    }
+
+    if resource_clone.is_empty() {
+        resource_clone = "index".to_string();
+    }
+
+    let file = File::open(resource_clone).await;
+
+    let mut content = String::new();
+
+    match file {
+        Ok(mut f) => {
+            read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
+            send_response(&mut stream, 204, None, Some(content)).await?;
+            Ok(())
+        },
+        Err(_) => {
+            not_found(&mut stream, headers).await
+        }
+    }
 }
 
-pub async fn handle_options(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
-    let response_headers = HashMap::from([("Accept", "GET, HEAD, POST, OPTIONS"),
-                                                                ("Connection", "keep-alive"),
-                                                                ("Keep-Alive", "timeout=5, max=100")]);
-    send_response(&mut stream, 204, Some(response_headers), None).await?;
+pub async fn handle_options(mut stream: TcpStream, _resource: &String, _headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
+    let accept_header = HashMap::from(("Accept", "GET, HEAD, POST, OPTIONS"));
+
+    send_response(&mut stream, 204, Some(accept_header), None).await?;
     Ok(())
 }

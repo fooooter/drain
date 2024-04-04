@@ -5,8 +5,9 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
 use tokio::net::*;
 use crate::pages::internal_server_error::internal_server_error;
+use crate::config::CONFIG;
 
-pub async fn send_response(stream: &mut TcpStream, status: i32, response_headers: Option<HashMap<&str, &str>>, content: Option<String>) -> Result<(), ErrorKind> {
+pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_headers: Option<HashMap<&str, &str>>, content: Option<String>) -> Result<(), ErrorKind> {
     let mut response = String::new();
     let status_text = match status {
         100 => "Continue",
@@ -77,18 +78,28 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, response_headers
 
     let date = get_current_date();
 
-    let mut response_headers_clone = response_headers.clone();
+    let mut local_response_headers_clone = local_response_headers.clone();
 
-    if let Some(ref mut h) = response_headers_clone {
+    if let Some(ref mut h) = local_response_headers_clone {
         h.remove("Date");
     }
 
     let date_header = format!("Date: {}\r\n", date);
     response.push_str(&*date_header);
 
-    match (response_headers_clone, content) {
+    let mut global_response_headers_clone = CONFIG.global_response_headers.clone();
+
+    match (local_response_headers_clone, content) {
         (Some(ref mut h), Some(c)) => {
             h.remove("Content-Length");
+
+            for (k, _) in &*CONFIG.global_response_headers {
+                if h.contains_key(k) {
+                    global_response_headers_clone.remove(k);
+                }
+            }
+
+            h.extend(global_response_headers_clone);
 
             for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
@@ -102,6 +113,14 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, response_headers
             response.push_str(&*format!("{content_length_header}{c}"));
         },
         (Some(ref mut h), None) => {
+            for (k, _) in &*CONFIG.global_response_headers {
+                if h.contains_key(k) {
+                    global_response_headers_clone.remove(k);
+                }
+            }
+
+            h.extend(global_response_headers_clone);
+
             for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }

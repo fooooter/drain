@@ -111,8 +111,7 @@ pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &O
     match file {
         Ok(mut f) => {
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
-            send_response(&mut stream, 200, None, Some(content)).await?;
-            Ok(())
+            send_response(&mut stream, 200, None, Some(content)).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -142,10 +141,9 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
 
             let content_length_string = content.len().to_string();
-            let content_length_header = HashMap::from(("Content-Length", &*content_length_string));
+            let content_length_header = HashMap::from([("Content-Length", &*content_length_string)]);
 
-            send_response(&mut stream, 200, Some(content_length_header), None).await?;
-            Ok(())
+            send_response(&mut stream, 200, Some(content_length_header), None).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -156,6 +154,12 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
 pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>, data: &String) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
+
+    if &*headers.get("Content-Type").unwrap_or(&"application/x-www-form-urlencoded".to_string()) != "application/x-www-form-urlencoded" {
+        let accept_mime_header = HashMap::from([("Accept", "application/x-www-form-urlencoded")]);
+
+        return send_response(&mut stream, 415, Some(accept_mime_header), None).await;
+    }
 
     match resource_clone.as_str() {
         "select" => return Ok(select(&mut stream, Post {headers, data}).await?),
@@ -173,8 +177,7 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
     match file {
         Ok(mut f) => {
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
-            send_response(&mut stream, 204, None, Some(content)).await?;
-            Ok(())
+            send_response(&mut stream, 204, None, Some(content)).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -183,8 +186,7 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
 }
 
 pub async fn handle_options(mut stream: TcpStream, _resource: &String, _headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
-    let accept_header = HashMap::from(("Accept", "GET, HEAD, POST, OPTIONS"));
+    let accept_header = HashMap::from([("Accept", "GET, HEAD, POST, OPTIONS")]);
 
-    send_response(&mut stream, 204, Some(accept_header), None).await?;
-    Ok(())
+    send_response(&mut stream, 204, Some(accept_header), None).await
 }

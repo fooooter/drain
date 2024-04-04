@@ -63,7 +63,7 @@ pub async fn select(stream: &mut TcpStream, request: RequestData<'_>) -> Result<
         },
         RequestData::Head {..} => {
             let content_length_string = content.len().to_string();
-            let content_length_header = HashMap::from(("Content-Length", content_length_string.as_str()));
+            let content_length_header = HashMap::from([("Content-Length", content_length_string.as_str())]);
             return send_response(stream, 200, Some(content_length_header), None).await
         }
     }

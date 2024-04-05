@@ -18,12 +18,9 @@ r#"<html lang="pl">
     </html>"#
     );
 
-    let response_headers = HashMap::from([
-        ("Connection", "keep-alive"),
-        ("Keep-Alive", "timeout=5, max=100"),
-        ("Content-Type", "text/html; charset=utf-8")]);
+    let content_type_header = HashMap::from([("Content-Type", "text/html; charset=utf-8")]);
 
-    if let Err(e) = send_response(&mut stream, 500, Some(response_headers), Some(content)).await {
+    if let Err(e) = send_response(&mut stream, 500, Some(content_type_header), Some(content)).await {
         return Err(e)
     }
     Ok(())

@@ -177,7 +177,6 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
     match file {
         Ok(mut f) => {
             read_to_string_wrapper(&mut f, &mut content, &mut stream, headers).await;
-            let response_headers = 
             send_response(&mut stream, 204, None, Some(content)).await
         },
         Err(_) => {

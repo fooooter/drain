@@ -90,16 +90,16 @@ impl Request {
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, resource: &String, parameters: &Option<HashMap<String, String>>, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
+pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, parameters: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
-    match resource_clone.as_str() {
-        _ => ()
-    }
-
     if resource_clone.is_empty() {
         resource_clone = "index".to_string();
+    }
+
+    match resource_clone.as_str() {
+        _ => ()
     }
 
     let file = File::open(resource_clone).await;
@@ -121,12 +121,12 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
-    match resource_clone.as_str() {
-        _ => {}
-    }
-
     if resource_clone.is_empty() {
         resource_clone = "index".to_string();
+    }
+
+    match resource_clone.as_str() {
+        _ => {}
     }
 
     let file = File::open(resource_clone).await;
@@ -158,12 +158,12 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
         return send_response(&mut stream, 415, Some(accept_mime_header), None).await;
     }
 
-    match resource_clone.as_str() {
-        _ => ()
-    }
-
     if resource_clone.is_empty() {
         resource_clone = "index".to_string();
+    }
+
+    match resource_clone.as_str() {
+        _ => ()
     }
 
     let file = File::open(resource_clone).await;

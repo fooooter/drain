@@ -19,7 +19,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
     match Request::parse_from_string(&request_string) {
         Ok(request) => {
             match request {
-                Get {resource, params, headers} => handle_get(stream, &resource, &params, &headers).await,
+                Get {resource, params, headers} => handle_get(stream, &headers, &resource, &params).await,
                 Head {resource, headers} => handle_head(stream, &resource, &headers).await,
                 Post {resource, headers, data} => handle_post(stream, &resource, &headers, &data).await,
                 Options {resource, headers} => handle_options(stream, &resource, &headers).await,

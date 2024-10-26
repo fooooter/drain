@@ -1,0 +1,6 @@
+{
+  "global_response_headers": {
+    "Connection": "keep-alive",
+    "Keep-Alive": "timeout=5, max=100"
+  }
+}

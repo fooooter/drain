@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 use tokio::net::TcpStream;
 use crate::util::send_response;
 
-pub async fn internal_server_error(mut stream: &mut TcpStream, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
+pub async fn internal_server_error(mut stream: &mut TcpStream) -> Result<(), ErrorKind> {
     let content = String::from(
 r#"<html lang="pl">
         <head>
@@ -18,7 +18,7 @@ r#"<html lang="pl">
     </html>"#
     );
 
-    let content_type_header = HashMap::from([("Content-Type", "text/html; charset=utf-8")]);
+    let content_type_header = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
 
     if let Err(e) = send_response(&mut stream, 500, Some(content_type_header), Some(content)).await {
         return Err(e)

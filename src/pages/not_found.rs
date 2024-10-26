@@ -3,7 +3,7 @@ use tokio::net::*;
 use tokio::io::ErrorKind;
 use crate::util::send_response;
 
-pub async fn not_found(mut stream: &mut TcpStream, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
+pub async fn not_found(mut stream: &mut TcpStream, _headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let content = String::from(
 r#"<!DOCTYPE html>
         <head>
@@ -17,7 +17,7 @@ r#"<!DOCTYPE html>
         </body>"#
     );
 
-    let content_type_header = HashMap::from([("Content-Type", "text/html; charset=utf-8")]);
+    let content_type_header = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
 
     if let Err(e) = send_response(&mut stream, 404, Some(content_type_header), Some(content)).await {
         return Err(e)

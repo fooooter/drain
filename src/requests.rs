@@ -3,9 +3,9 @@ use tokio::io::ErrorKind;
 use tokio::fs::*;
 use tokio::net::TcpStream;
 use regex::*;
+use glob::*;
 use crate::util::*;
 use crate::pages::not_found::not_found;
-use crate::requests::RequestData::*;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -28,7 +28,7 @@ pub enum RequestData<'a> {
 impl Request {
     pub fn parse_from_string(request_string: &String) -> Result<Self, ErrorKind> {
         let general_regex = Regex::new(
-            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /((([A-Za-z0-9\-_]+\.[[:alnum:]]+)|([A-Za-z0-9\-_]+))(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
+            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(((([A-Za-z0-9\-_]+\.[[:alnum:]]+/?)+)+|([A-Za-z0-9\-_]+/?)+)+(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
         ).unwrap();
 
         if !general_regex.is_match(request_string.as_str()) {
@@ -90,9 +90,22 @@ impl Request {
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, parameters: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
+pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, _parameters: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
+
+    for (k, v) in config(&mut stream).await.access_control {
+        if let Ok(paths) = glob(&*k) {
+            for entry in paths.filter_map(Result::ok) {
+                if entry.to_string_lossy().eq(&resource_clone) {
+                    if v.eq("deny") {
+                        not_found(&mut stream, headers).await?;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
 
     if resource_clone.is_empty() {
         resource_clone = "index".to_string();
@@ -109,7 +122,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     match file {
         Ok(mut f) => {
             rts_wrapper(&mut f, &mut content, &mut stream).await;
-            send_response(&mut stream, 200, None, Some(content)).await
+            send_response(&mut stream, 200, None, Some(content), false).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -121,6 +134,19 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
+    for (k, v) in config(&mut stream).await.access_control {
+        if let Ok(paths) = glob(&*k) {
+            for entry in paths.filter_map(Result::ok) {
+                if entry.to_string_lossy().eq(&resource_clone) {
+                    if v.eq("deny") {
+                        not_found(&mut stream, headers).await?;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
     if resource_clone.is_empty() {
         resource_clone = "index".to_string();
     }
@@ -130,7 +156,6 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     }
 
     let file = File::open(resource_clone).await;
-
     let mut content = String::new();
 
     match file {
@@ -140,7 +165,7 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
             let content_length_string = content.len().to_string();
             let content_length_header = HashMap::from([(String::from("Content-Length"), content_length_string)]);
 
-            send_response(&mut stream, 200, Some(content_length_header), None).await
+            send_response(&mut stream, 200, Some(content_length_header), None, false).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -148,14 +173,27 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>, data: &String) -> Result<(), ErrorKind> {
+pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>, _data: &String) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
-    if &*headers.get("Content-Type").unwrap_or(&"application/x-www-form-urlencoded".to_string()) != "application/x-www-form-urlencoded" {
+    for (k, v) in config(&mut stream).await.access_control {
+        if let Ok(paths) = glob(&*k) {
+            for entry in paths.filter_map(Result::ok) {
+                if entry.to_string_lossy().eq(&resource_clone) {
+                    if v.eq("deny") {
+                        not_found(&mut stream, headers).await?;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    if !headers.get("Content-Type").unwrap_or(&"application/x-www-form-urlencoded".to_string()).eq("application/x-www-form-urlencoded") {
         let accept_mime_header = HashMap::from([(String::from("Accept"), String::from("application/x-www-form-urlencoded"))]);
 
-        return send_response(&mut stream, 415, Some(accept_mime_header), None).await;
+        return send_response(&mut stream, 415, Some(accept_mime_header), None, false).await;
     }
 
     if resource_clone.is_empty() {
@@ -173,7 +211,7 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
     match file {
         Ok(mut f) => {
             rts_wrapper(&mut f, &mut content, &mut stream).await;
-            send_response(&mut stream, 204, None, Some(content)).await
+            send_response(&mut stream, 204, None, Some(content), false).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -184,5 +222,5 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
 pub async fn handle_options(mut stream: TcpStream, _resource: &String, _headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-    send_response(&mut stream, 204, Some(accept_header), None).await
+    send_response(&mut stream, 204, Some(accept_header), None, false).await
 }

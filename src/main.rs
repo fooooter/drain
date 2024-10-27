@@ -26,13 +26,12 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-                    send_response(&mut stream, 405, Some(accept_header), None).await?;
-                    Ok(())
+                    send_response(&mut stream, 405, Some(accept_header), None, false).await
                 }
             }
         },
         Err(e) => {
-            send_response(&mut stream, 400, None, None).await?;
+            send_response(&mut stream, 400, None, None, false).await?;
             Err(e)
         }
     }

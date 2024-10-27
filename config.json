@@ -2,5 +2,16 @@
   "global_response_headers": {
     "Connection": "keep-alive",
     "Keep-Alive": "timeout=5, max=100"
+  },
+  "access_control": {
+    "config.json": "deny",
+    "Cargo.toml": "deny",
+    "Cargo.lock": "deny",
+    "favicon.ico": "allow",
+    "main.css": "allow",
+    "README.md": "deny",
+    "target/*": "deny",
+    "src/*": "deny",
+    "test/*": "deny"
   }
 }

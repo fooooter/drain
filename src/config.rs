@@ -3,5 +3,6 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub global_response_headers: HashMap<String, String>
+    pub global_response_headers: HashMap<String, String>,
+    pub access_control: HashMap<String, String>
 }

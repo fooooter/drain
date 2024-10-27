@@ -4,8 +4,8 @@ use tokio::net::TcpStream;
 use crate::util::send_response;
 
 pub async fn internal_server_error(mut stream: &mut TcpStream) -> Result<(), ErrorKind> {
-    let content = String::from(
-r#"<html lang="pl">
+    let content = String::from(r#"
+    <html lang="pl">
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,8 +20,5 @@ r#"<html lang="pl">
 
     let content_type_header = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
 
-    if let Err(e) = send_response(&mut stream, 500, Some(content_type_header), Some(content)).await {
-        return Err(e)
-    }
-    Ok(())
+    send_response(&mut stream, 500, Some(content_type_header), Some(content), true).await
 }

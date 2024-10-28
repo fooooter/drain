@@ -272,3 +272,17 @@ pub async fn get_config(stream: &mut TcpStream) -> Config {
 pub async fn config(stream: &mut TcpStream) -> Config {
     Box::pin(get_config(stream)).await
 }
+
+pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
+    if let Some(encodings_str) = headers.get("Accept-Encoding") {
+        let encodings: Vec<String> = encodings_str.split(',').map(|x| String::from(x.trim())).collect();
+
+        if encodings.contains(&String::from("gzip")) {
+            return true;
+        }
+
+        false
+    } else {
+        false
+    }
+}

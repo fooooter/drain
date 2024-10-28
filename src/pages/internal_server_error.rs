@@ -18,7 +18,7 @@ pub async fn internal_server_error(mut stream: &mut TcpStream) -> Result<(), Err
     </html>"#
     );
 
-    let content_type_header = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
+    let response_headers = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
 
-    send_response(&mut stream, 500, Some(content_type_header), Some(content), true).await
+    send_response(&mut stream, 500, Some(response_headers), Some(content), true).await
 }

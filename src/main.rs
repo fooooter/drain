@@ -20,9 +20,9 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
         Ok(request) => {
             match request {
                 Get {resource, params, headers} => handle_get(stream, &headers, &resource, &params).await,
-                Head {resource, headers} => handle_head(stream, &resource, &headers).await,
-                Post {resource, headers, data} => handle_post(stream, &resource, &headers, &data).await,
-                Options {resource, headers} => handle_options(stream, &resource, &headers).await,
+                Head {resource, headers} => handle_head(stream, &headers, &resource).await,
+                Post {resource, headers, data} => handle_post(stream, &headers, &resource, &data).await,
+                Options {resource, headers} => handle_options(stream, &headers, &resource).await,
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 

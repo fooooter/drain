@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::io::Read;
 use chrono::Utc;
+use flate2::Compression;
+use flate2::read::GzEncoder;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
@@ -94,6 +97,8 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
     };
     let mut global_response_headers_clone = global_response_headers.clone();
 
+    let mut response_bytes: Vec<u8> = Vec::new();
+
     match (local_response_headers_clone, content) {
         (Some(ref mut h), Some(c)) => {
             h.remove("Content-Length");
@@ -106,18 +111,35 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
 
             h.extend(global_response_headers_clone);
 
-            for (k, v) in h {
+            for (k, v) in &mut *h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let content_trim = c.trim();
+            let content_trim: &[u8] = c.trim().as_bytes();
+            let mut content_prepared: Vec<u8> = Vec::new();
 
-            let content_length_header = format!("Content-Length: {}\r\n\r\n", content_trim.len());
-            response.push_str(&*format!("{content_length_header}{content_trim}"));
+            if let Some(encoding) = h.get(&String::from("Content-Encoding")) {
+                if encoding.eq("gzip") {
+                    if let Err(e) = GzEncoder::new(content_trim, Compression::default()).read_to_end(&mut content_prepared) {
+                        eprintln!("[send_response():124] An error occurred while compressing the content of a response:\n{:?}\nAttempting to send uncompressed data...", e);
+                        content_prepared = c.trim().as_bytes().to_vec();
+                    }
+                }
+            }
+
+            let content_length_header = format!("Content-Length: {}\r\n\r\n", content_prepared.len());
+            response.push_str(&*format!("{content_length_header}"));
+
+            response_bytes = response.as_bytes().to_vec();
+
+            for x in content_prepared {
+                response_bytes.push(x);
+            }
         },
         (None, Some(c)) => {
             let content_length_header = format!("Content-Length: {}\r\n\r\n", c.len());
             response.push_str(&*format!("{content_length_header}{}", c.trim_start()));
+            response_bytes = response.as_bytes().to_vec();
         },
         (Some(ref mut h), None) => {
             for (k, _) in global_response_headers {
@@ -132,16 +154,18 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
             response.push_str("\r\n");
+            response_bytes = response.as_bytes().to_vec();
         },
         (None, None) => {
             response.push_str("\r\n");
+            response_bytes = response.as_bytes().to_vec();
         }
     }
 
-    if let Err(e1) = stream.write_all(response.as_bytes()).await {
-        eprintln!("[send_response():141] An error occurred while writing a response to a client:\n{:?}\nAttempting to close connection...", e1);
+    if let Err(e1) = stream.write_all(&*response_bytes).await {
+        eprintln!("[send_response():166] An error occurred while writing a response to a client:\n{:?}\nAttempting to close connection...", e1);
         if let Err(e2) = stream.shutdown().await {
-            eprintln!("[send_response():143] Clean shutdown failed:\n{:?}", e2);
+            eprintln!("[send_response():168] Clean shutdown failed:\n{:?}", e2);
             panic!("Unrecoverable errors occurred while handling connection:\n{e1}\n{e2}");
         }
         panic!("Unrecoverable error occurred while handling connection:\n{e1}");
@@ -156,9 +180,9 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
     let mut line = match request_iter.next_line().await {
         Ok(line) => line.unwrap(),
         Err(e1) => {
-            eprintln!("[receive_request():158] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", e1);
+            eprintln!("[receive_request():183] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", e1);
             if let Err(e2) = stream.shutdown().await {
-                eprintln!("[receive_request():160] FAILED. Error information:\n{:?}", e2);
+                eprintln!("[receive_request():185] FAILED. Error information:\n{:?}", e2);
             }
             panic!("Unrecoverable error occurred while handling a connection.");
         }
@@ -169,9 +193,9 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
         line = match request_iter.next_line().await {
             Ok(line) => line.unwrap(),
             Err(e1) => {
-                eprintln!("[receive_request():171] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", e1);
+                eprintln!("[receive_request():196] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", e1);
                 if let Err(e2) = stream.shutdown().await {
-                    eprintln!("[receive_request():173] FAILED. Error information:\n{:?}", e2);
+                    eprintln!("[receive_request():198] FAILED. Error information:\n{:?}", e2);
                 }
                 panic!("Unrecoverable error occurred while handling connection.");
             }
@@ -181,16 +205,16 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
 
 pub async fn rts_wrapper(f: &mut File, buf: &mut String, stream: &mut TcpStream) {
     if let Err(e1) = f.read_to_string(buf).await {
-        eprintln!("[rts_wrapper():183] An error occurred after an attempt to read from a file: {:?}.\n\
+        eprintln!("[rts_wrapper():208] An error occurred after an attempt to read from a file: {:?}.\n\
                            Error information:\n\
                            {:?}\n\
                            Attempting to send Internal Server Error page to the client...", f, e1);
         if let Err(e2) = internal_server_error(stream).await {
-            eprintln!("[rts_wrapper():188] FAILED. Error information: {:?}", e2);
+            eprintln!("[rts_wrapper():213] FAILED. Error information: {:?}", e2);
         }
         eprintln!("Attempting to close connection...");
         if let Err(e2) = stream.shutdown().await {
-            eprintln!("[rts_wrapper():192] FAILED. Error information:\n{:?}", e2);
+            eprintln!("[rts_wrapper():217] FAILED. Error information:\n{:?}", e2);
         }
         panic!("Unrecoverable error occurred while handling connection.");
     }
@@ -211,16 +235,16 @@ pub async fn get_config(stream: &mut TcpStream) -> Config {
             rts_wrapper(&mut f, &mut json_str, stream).await;
         },
         Err(e1) => {
-            eprintln!("[get_config():213] A critical server config file wasn't found.\n\
+            eprintln!("[get_config():238] A critical server config file wasn't found.\n\
                            Error information:\n\
                            {:?}\n\
                            Attempting to send Internal Server Error page to the client...", e1);
             if let Err(e2) = internal_server_error(stream).await {
-                eprintln!("[get_config():218] FAILED. Error information: {:?}", e2);
+                eprintln!("[get_config():243] FAILED. Error information: {:?}", e2);
             }
             eprintln!("Attempting to close connection...");
             if let Err(e2) = stream.shutdown().await {
-                eprintln!("[get_config():222] FAILED. Error information:\n{:?}", e2);
+                eprintln!("[get_config():247] FAILED. Error information:\n{:?}", e2);
             }
             panic!("Unrecoverable error occurred while handling connection.");
         }
@@ -229,16 +253,16 @@ pub async fn get_config(stream: &mut TcpStream) -> Config {
     match serde_json::from_str(&*json_str) {
         Ok(json) => json,
         Err(e1) => {
-            eprintln!("[get_config():231] A critical server config file is malformed.\n\
+            eprintln!("[get_config():256] A critical server config file is malformed.\n\
                            Error information:\n\
                            {:?}\n\
                            Attempting to send Internal Server Error page to the client...", e1);
             if let Err(e2) = internal_server_error(stream).await {
-                eprintln!("[get_config():236] FAILED. Error information: {:?}", e2);
+                eprintln!("[get_config():261] FAILED. Error information: {:?}", e2);
             }
             eprintln!("Attempting to close connection...");
             if let Err(e2) = stream.shutdown().await {
-                eprintln!("[get_config():240] FAILED. Error information:\n{:?}", e2);
+                eprintln!("[get_config():265] FAILED. Error information:\n{:?}", e2);
             }
             panic!("Unrecoverable error occurred while handling connection.");
         }

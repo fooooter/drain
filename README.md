@@ -3,9 +3,9 @@
 [✔]   	OPTIONS<br>
 [✔]   	HEAD<br>
 [—]   	POST<br>
-[✔]   	Database connection<br>
-[✖]		Auto-detect MIME types<br>
+[✖]   	Database connection<br>
+[✔]	Auto-detect MIME types<br>
 [✖]		Cookies<br>
 [✖]		Sessions<br>
-[✔]		Config<br>
-[✖]		Compression<br>
+[✔]	Config (now JSON)<br>
+[—]		Compression<br>

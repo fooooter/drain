@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use tokio::io::ErrorKind;
+use tokio::io::{ErrorKind};
 use tokio::fs::*;
 use tokio::net::TcpStream;
 use regex::*;
@@ -108,21 +108,40 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 
     if resource_clone.is_empty() {
-        resource_clone = "index".to_string();
+        resource_clone = String::from("index");
     }
 
     match resource_clone.as_str() {
         _ => ()
     }
 
-    let file = File::open(resource_clone).await;
-
+    let file = File::open(&resource_clone).await;
     let mut content = String::new();
 
     match file {
         Ok(mut f) => {
             rts_wrapper(&mut f, &mut content, &mut stream).await;
-            send_response(&mut stream, 200, None, Some(content), false).await
+
+            let mut response_headers: HashMap<String, String> = HashMap::new();
+
+            let type_guess = if let Some(guess) = mime_guess::from_path(resource_clone).first() {
+                guess.to_string()
+            } else {
+                String::from("application/octet-stream")
+            };
+
+            response_headers.insert(String::from("Content-Type"), type_guess);
+
+            if let Some(encodings_str) = headers.get("Accept-Encoding") {
+                let encodings: Vec<String> = encodings_str.split(',').map(|x| String::from(x.trim())).collect();
+
+                if encodings.contains(&String::from("gzip")) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from("gzip"));
+                }
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
         },
         Err(_) => {
             not_found(&mut stream, headers).await
@@ -130,7 +149,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 }
 
-pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
+pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String,) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -148,7 +167,7 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     }
 
     if resource_clone.is_empty() {
-        resource_clone = "index".to_string();
+        resource_clone = String::from("index");
     }
 
     match resource_clone.as_str() {
@@ -173,7 +192,7 @@ pub async fn handle_head(mut stream: TcpStream, resource: &String, headers: &Has
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &HashMap<String, String>, _data: &String) -> Result<(), ErrorKind> {
+pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, _data: &String) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -190,14 +209,14 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
         }
     }
 
-    if !headers.get("Content-Type").unwrap_or(&"application/x-www-form-urlencoded".to_string()).eq("application/x-www-form-urlencoded") {
+    if !headers.get("Content-Type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
         let accept_mime_header = HashMap::from([(String::from("Accept"), String::from("application/x-www-form-urlencoded"))]);
 
         return send_response(&mut stream, 415, Some(accept_mime_header), None, false).await;
     }
 
     if resource_clone.is_empty() {
-        resource_clone = "index".to_string();
+        resource_clone = String::from("index");
     }
 
     match resource_clone.as_str() {
@@ -219,7 +238,7 @@ pub async fn handle_post(mut stream: TcpStream, resource: &String, headers: &Has
     }
 }
 
-pub async fn handle_options(mut stream: TcpStream, _resource: &String, _headers: &HashMap<String, String>) -> Result<(), ErrorKind> {
+pub async fn handle_options(mut stream: TcpStream, _headers: &HashMap<String, String>, _resource: &String) -> Result<(), ErrorKind> {
     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
     send_response(&mut stream, 204, Some(accept_header), None, false).await

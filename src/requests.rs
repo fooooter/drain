@@ -5,6 +5,7 @@ use tokio::net::TcpStream;
 use regex::*;
 use glob::*;
 use crate::util::*;
+use crate::config::config;
 use crate::pages::not_found::not_found;
 
 pub enum Request {
@@ -101,7 +102,11 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
         response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
     }
 
-    for (k, v) in config(&mut stream).await.access_control {
+    if resource_clone.is_empty() {
+        resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    }
+
+    for (k, v) in config(Some(&mut stream)).await.access_control {
         if let Ok(paths) = glob(&*k) {
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
@@ -112,10 +117,6 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
                 }
             }
         }
-    }
-
-    if resource_clone.is_empty() {
-        resource_clone = String::from("index");
     }
 
     match resource_clone.as_str() {
@@ -151,7 +152,11 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    for (k, v) in config(&mut stream).await.access_control {
+    if resource_clone.is_empty() {
+        resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    }
+
+    for (k, v) in config(Some(&mut stream)).await.access_control {
         if let Ok(paths) = glob(&*k) {
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
@@ -162,10 +167,6 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
                 }
             }
         }
-    }
-
-    if resource_clone.is_empty() {
-        resource_clone = String::from("index");
     }
 
     match resource_clone.as_str() {
@@ -201,7 +202,11 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
     }
 
-    for (k, v) in config(&mut stream).await.access_control {
+    if resource_clone.is_empty() {
+        resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    }
+
+    for (k, v) in config(Some(&mut stream)).await.access_control {
         if let Ok(paths) = glob(&*k) {
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
@@ -219,10 +224,6 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         response_headers.insert(String::from("Vary"), String::from("Content-Type"));
 
         return send_response(&mut stream, 415, Some(response_headers), None, false).await;
-    }
-
-    if resource_clone.is_empty() {
-        resource_clone = String::from("index");
     }
 
     match resource_clone.as_str() {

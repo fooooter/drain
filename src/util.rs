@@ -8,7 +8,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use crate::pages::internal_server_error::internal_server_error;
-use crate::config::Config;
+use crate::config::get_config;
 
 pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), ErrorKind> {
     let mut response = String::new();
@@ -91,7 +91,7 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
     response.push_str(&*date_header);
 
     let global_response_headers = if !error {
-        Box::pin(get_config(stream)).await.global_response_headers
+        Box::pin(get_config(Some(stream))).await.global_response_headers
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };
@@ -168,7 +168,7 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
             eprintln!("[send_response():168] Clean shutdown failed:\n{:?}", e2);
             panic!("Unrecoverable errors occurred while handling connection:\n{e1}\n{e2}");
         }
-        panic!("Unrecoverable error occurred while handling connection:\n{e1}");
+        panic!("Unrecoverable error occurred while handling connection.");
     }
     Ok(())
 }
@@ -180,7 +180,8 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
     let mut line = match request_iter.next_line().await {
         Ok(line) => line.unwrap(),
         Err(e1) => {
-            eprintln!("[receive_request():183] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", e1);
+            eprintln!("[receive_request():183] An error occurred while reading a request from a client. Error information:\n{:?}\n\
+                        Attempting to close connection...", e1);
             if let Err(e2) = stream.shutdown().await {
                 eprintln!("[receive_request():185] FAILED. Error information:\n{:?}", e2);
             }
@@ -206,9 +207,9 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
 pub async fn rts_wrapper(f: &mut File, buf: &mut String, stream: &mut TcpStream) {
     if let Err(e1) = f.read_to_string(buf).await {
         eprintln!("[rts_wrapper():208] An error occurred after an attempt to read from a file: {:?}.\n\
-                           Error information:\n\
-                           {:?}\n\
-                           Attempting to send Internal Server Error page to the client...", f, e1);
+                   Error information:\n\
+                   {:?}\n\
+                   Attempting to send Internal Server Error page to the client...", f, e1);
         if let Err(e2) = internal_server_error(stream).await {
             eprintln!("[rts_wrapper():213] FAILED. Error information: {:?}", e2);
         }
@@ -226,53 +227,6 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub async fn get_config(stream: &mut TcpStream) -> Config {
-    let mut json_str: String = String::new();
-    let config_file = File::open("config.json").await;
-
-    match config_file {
-        Ok(mut f) => {
-            rts_wrapper(&mut f, &mut json_str, stream).await;
-        },
-        Err(e1) => {
-            eprintln!("[get_config():238] A critical server config file wasn't found.\n\
-                           Error information:\n\
-                           {:?}\n\
-                           Attempting to send Internal Server Error page to the client...", e1);
-            if let Err(e2) = internal_server_error(stream).await {
-                eprintln!("[get_config():243] FAILED. Error information: {:?}", e2);
-            }
-            eprintln!("Attempting to close connection...");
-            if let Err(e2) = stream.shutdown().await {
-                eprintln!("[get_config():247] FAILED. Error information:\n{:?}", e2);
-            }
-            panic!("Unrecoverable error occurred while handling connection.");
-        }
-    }
-
-    match serde_json::from_str(&*json_str) {
-        Ok(json) => json,
-        Err(e1) => {
-            eprintln!("[get_config():256] A critical server config file is malformed.\n\
-                           Error information:\n\
-                           {:?}\n\
-                           Attempting to send Internal Server Error page to the client...", e1);
-            if let Err(e2) = internal_server_error(stream).await {
-                eprintln!("[get_config():261] FAILED. Error information: {:?}", e2);
-            }
-            eprintln!("Attempting to close connection...");
-            if let Err(e2) = stream.shutdown().await {
-                eprintln!("[get_config():265] FAILED. Error information:\n{:?}", e2);
-            }
-            panic!("Unrecoverable error occurred while handling connection.");
-        }
-    }
-}
-
-pub async fn config(stream: &mut TcpStream) -> Config {
-    Box::pin(get_config(stream)).await
-}
-
 pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
     if let Some(encodings_str) = headers.get("Accept-Encoding") {
         let encodings: Vec<String> = encodings_str.split(',').map(|x| String::from(x.trim())).collect();
@@ -280,7 +234,6 @@ pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
         if encodings.contains(&String::from("gzip")) {
             return true;
         }
-
         false
     } else {
         false

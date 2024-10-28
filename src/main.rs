@@ -10,6 +10,7 @@ use tokio::io::ErrorKind;
 use requests::Request::{Get, Head, Options, Post};
 use requests::*;
 use crate::util::*;
+use crate::config::config;
 
 async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
     let mut request_string = String::new();
@@ -40,7 +41,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
 #[tokio::main]
 
 async fn main() -> io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind(config(None).await.bind).await?;
     loop {
         let (stream, _) = listener.accept().await?;
         spawn(async move {

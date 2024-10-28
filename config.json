@@ -12,6 +12,8 @@
     "README.md": "deny",
     "target/*": "deny",
     "src/*": "deny",
-    "test/*": "deny"
-  }
+    "test/*": "deny",
+    "index.html": "allow"
+  },
+  "bind": "127.0.0.1:8080"
 }

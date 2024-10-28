@@ -13,7 +13,7 @@ pub struct Config {
     pub bind: String
 }
 
-pub async fn get_config(mut stream: Option<&mut TcpStream>) -> Config {
+pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {
     let mut json_str: String = String::new();
     let config_file = File::open("config.json").await;
 

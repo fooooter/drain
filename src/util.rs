@@ -97,7 +97,7 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
     };
     let mut global_response_headers_clone = global_response_headers.clone();
 
-    let mut response_bytes: Vec<u8> = Vec::new();
+    let mut response_bytes: Vec<u8>;
 
     match (local_response_headers_clone, content) {
         (Some(ref mut h), Some(c)) => {

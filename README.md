@@ -8,4 +8,4 @@
 [✖]		Cookies<br>
 [✖]		Sessions<br>
 [✔]	Config (now JSON)<br>
-[—]		Compression<br>
+[✔]	Compression<br>

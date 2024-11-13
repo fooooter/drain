@@ -7,6 +7,7 @@ use glob::*;
 use crate::util::*;
 use crate::config::config;
 use crate::pages::not_found::not_found;
+use crate::requests::RequestData::{Get, Head, Post};
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -111,7 +112,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        not_found(&mut stream, headers, response_headers).await?;
+                        not_found(&mut stream, Get {params: &None, headers}, response_headers).await?;
                         return Ok(());
                     }
                 }
@@ -141,7 +142,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
         },
         Err(_) => {
-            not_found(&mut stream, headers, response_headers).await
+            not_found(&mut stream, Get {params: &None, headers}, response_headers).await
         }
     }
 }
@@ -161,7 +162,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        not_found(&mut stream, headers, response_headers).await?;
+                        not_found(&mut stream, Head {headers}, response_headers).await?;
                         return Ok(());
                     }
                 }
@@ -186,7 +187,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 200, Some(response_headers), None, false).await
         },
         Err(_) => {
-            not_found(&mut stream, headers, response_headers).await
+            not_found(&mut stream, Head {headers}, response_headers).await
         }
     }
 }
@@ -211,7 +212,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        not_found(&mut stream, headers, response_headers).await?;
+                        not_found(&mut stream, Post {data: _data, headers}, response_headers).await?;
                         return Ok(());
                     }
                 }
@@ -240,7 +241,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 204, None, Some(content), false).await
         },
         Err(_) => {
-            not_found(&mut stream, headers, response_headers).await
+            not_found(&mut stream, Post {data: _data, headers}, response_headers).await
         }
     }
 }

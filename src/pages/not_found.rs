@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use tokio::net::*;
 use tokio::io::ErrorKind;
+use crate::requests::RequestData;
 use crate::util::send_response;
 
-pub async fn not_found(mut stream: &mut TcpStream, _request_headers: &HashMap<String, String>, mut response_headers: HashMap<String, String>) -> Result<(), ErrorKind> {
+pub async fn not_found<'a>(mut stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: HashMap<String, String>) -> Result<(), ErrorKind> {
     let content = String::from(r#"
     <!DOCTYPE html>
         <head>

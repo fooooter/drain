@@ -1,14 +1,18 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::Read;
+use std::pin::Pin;
 use chrono::Utc;
 use flate2::Compression;
 use flate2::read::GzEncoder;
+use libloading::{library_filename, Error, Library, Symbol};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::get_config;
+use crate::requests::RequestData;
 
 pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), ErrorKind> {
     let mut response = String::new();
@@ -237,5 +241,23 @@ pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
         false
     } else {
         false
+    }
+}
+
+pub fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, ErrorKind> {
+    unsafe {
+        let lib = if let Ok(l) = Library::new(library_filename("dynamic_pages")) {
+            l
+        } else {
+            return Err(ErrorKind::Other);
+        };
+
+        let p = if let Ok(s) = lib.get::<fn(RequestData, &mut HashMap<String, String>) -> String>(page.as_bytes()) {
+            s
+        } else {
+            return Err(ErrorKind::Other);
+        };
+
+        Ok(p(request_data, &mut response_headers))
     }
 }

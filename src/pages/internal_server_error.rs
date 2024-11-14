@@ -5,7 +5,8 @@ use crate::util::send_response;
 
 pub async fn internal_server_error(mut stream: &mut TcpStream) -> Result<(), ErrorKind> {
     let content = String::from(r#"
-    <html lang="pl">
+    <!DOCTYPE html>
+    <html lang="en">
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">

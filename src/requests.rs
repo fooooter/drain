@@ -8,6 +8,7 @@ use crate::util::*;
 use crate::config::config;
 use crate::pages::not_found::not_found;
 use crate::requests::RequestData::{Get, Head, Post};
+use libloading::{Library, library_filename, Symbol};
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -112,16 +113,17 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        not_found(&mut stream, Get {params: &None, headers}, response_headers).await?;
-                        return Ok(());
+                        let content = page("not_found", Get {params: &None, headers}, &mut response_headers)?;
+                        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
                     }
                 }
             }
         }
     }
 
-    match resource_clone.as_str() {
-        _ => ()
+    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
+        let content = page(&*resource_clone, Get {params: _parameters, headers}, &mut response_headers)?;
+        return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
     }
 
     let file = File::open(&resource_clone).await;
@@ -142,7 +144,8 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
         },
         Err(_) => {
-            not_found(&mut stream, Get {params: &None, headers}, response_headers).await
+            content = page("not_found", Get {params: &None, headers}, &mut response_headers)?;
+            send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }
 }
@@ -157,21 +160,25 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
+    let lib = unsafe {Library::new(library_filename("webpages")).unwrap()};
+    let not_found: Symbol<fn(RequestData, &mut HashMap<String, String>) -> String> = unsafe {lib.get(b"not_found").unwrap()};
+
     for (k, v) in config(Some(&mut stream)).await.access_control {
         if let Ok(paths) = glob(&*k) {
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        not_found(&mut stream, Head {headers}, response_headers).await?;
-                        return Ok(());
+                        let content = page("not_found", Head {headers}, &mut response_headers)?;
+                        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
                     }
                 }
             }
         }
     }
 
-    match resource_clone.as_str() {
-        _ => {}
+    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
+        let content = page(&*resource_clone, Head {headers}, &mut response_headers)?;
+        return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
     }
 
     let file = File::open(resource_clone).await;
@@ -187,7 +194,8 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 200, Some(response_headers), None, false).await
         },
         Err(_) => {
-            not_found(&mut stream, Head {headers}, response_headers).await
+            content = page("not_found", Head {headers}, &mut response_headers)?;
+            send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }
 }
@@ -207,13 +215,16 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
+    let lib = unsafe {Library::new(library_filename("webpages")).unwrap()};
+    let not_found: Symbol<fn(RequestData, &mut HashMap<String, String>) -> String> = unsafe {lib.get(b"not_found").unwrap()};
+
     for (k, v) in config(Some(&mut stream)).await.access_control {
         if let Ok(paths) = glob(&*k) {
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        not_found(&mut stream, Post {data: _data, headers}, response_headers).await?;
-                        return Ok(());
+                        let content = page("not_found", Post {data: _data, headers}, &mut response_headers)?;
+                        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
                     }
                 }
             }
@@ -227,8 +238,9 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         return send_response(&mut stream, 415, Some(response_headers), None, false).await;
     }
 
-    match resource_clone.as_str() {
-        _ => ()
+    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
+        let content = page(&*resource_clone, Post {data: _data, headers}, &mut response_headers)?;
+        return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
     }
 
     let file = File::open(resource_clone).await;
@@ -241,7 +253,8 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 204, None, Some(content), false).await
         },
         Err(_) => {
-            not_found(&mut stream, Post {data: _data, headers}, response_headers).await
+            let content = page("not_found", Post {data: _data, headers}, &mut response_headers)?;
+            send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }
 }

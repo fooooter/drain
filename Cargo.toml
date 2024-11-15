@@ -2,6 +2,8 @@
 name = "web_server"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/fooooter/web_server_poc"
+license = "LGPL-3.0-or-later"
 
 [dependencies]
 tokio = { version = "1.41.1", features = ["full"] }

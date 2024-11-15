@@ -12,7 +12,7 @@ pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<S
             <title>404</title>
         </head>
         <body>
-            Requested content isn't found on the server.
+            Requested content wasn't found on the server.
         </body>
     </html>"#
     );

@@ -1,0 +1,14 @@
+{
+  "global_response_headers": {
+    "Connection": "keep-alive",
+    "Keep-Alive": "timeout=5, max=100"
+  },
+  "access_control": {
+    "example1.html": "allow",
+    "example2.html": "deny"
+  },
+  "bind": "127.0.0.1:80",
+  "dynamic_pages": [
+    "index"
+  ]
+}

@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use crate::pages::internal_server_error::internal_server_error;
-use crate::config::get_config;
+use crate::config::{config, get_config};
 use crate::requests::RequestData;
 
 pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), ErrorKind> {
@@ -242,9 +242,9 @@ pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
     }
 }
 
-pub fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, ErrorKind> {
+pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, ErrorKind> {
     unsafe {
-        let lib = if let Ok(l) = Library::new(library_filename("dynamic_pages")) {
+        let lib = if let Ok(l) = Library::new(config(Some(stream)).await.dynamic_pages_library) {
             l
         } else {
             return Err(ErrorKind::Other);

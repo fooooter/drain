@@ -7,8 +7,9 @@
     "example1.html": "allow",
     "example2.html": "deny"
   },
-  "bind": "127.0.0.1:80",
+  "bind": "127.0.0.1:8080",
   "dynamic_pages": [
     "index"
-  ]
+  ],
+  "dynamic_pages_library": "libdynamic_pages.so"
 }

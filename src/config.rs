@@ -11,7 +11,8 @@ pub struct Config {
     pub global_response_headers: HashMap<String, String>,
     pub access_control: HashMap<String, String>,
     pub bind: String,
-    pub dynamic_pages: Vec<String>
+    pub dynamic_pages: Vec<String>,
+    pub dynamic_pages_library: String
 }
 
 pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {

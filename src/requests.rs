@@ -111,7 +111,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        let content = page("not_found", Get {params: &None, headers}, &mut response_headers)?;
+                        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
                         return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
                     }
                 }
@@ -120,7 +120,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        let content = page(&*resource_clone, Get {params: parameters, headers}, &mut response_headers)?;
+        let content = page(&*resource_clone, &mut stream, Get {params: parameters, headers}, &mut response_headers).await?;
         return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
     }
 
@@ -142,7 +142,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
         },
         Err(_) => {
-            content = page("not_found", Get {params: &None, headers}, &mut response_headers)?;
+            content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
             send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }
@@ -163,7 +163,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        let content = page("not_found", Head {headers}, &mut response_headers)?;
+                        let content = page("not_found", &mut stream, Head {headers}, &mut response_headers).await?;
                         return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
                     }
                 }
@@ -172,7 +172,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        let content = page(&*resource_clone, Head {headers}, &mut response_headers)?;
+        let content = page(&*resource_clone, &mut stream, Head {headers}, &mut response_headers).await?;
         return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
     }
 
@@ -189,7 +189,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 200, Some(response_headers), None, false).await
         },
         Err(_) => {
-            content = page("not_found", Head {headers}, &mut response_headers)?;
+            content = page("not_found", &mut stream, Head {headers}, &mut response_headers).await?;
             send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }
@@ -215,7 +215,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             for entry in paths.filter_map(Result::ok) {
                 if entry.to_string_lossy().eq(&resource_clone) {
                     if v.eq("deny") {
-                        let content = page("not_found", Post {data, headers}, &mut response_headers)?;
+                        let content = page("not_found", &mut stream, Post {data, headers}, &mut response_headers).await?;
                         return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
                     }
                 }
@@ -231,7 +231,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        let content = page(&*resource_clone, Post {data, headers}, &mut response_headers)?;
+        let content = page(&*resource_clone, &mut stream, Post {data, headers}, &mut response_headers).await?;
         return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
     }
 
@@ -245,7 +245,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 204, None, Some(content), false).await
         },
         Err(_) => {
-            let content = page("not_found", Post {data, headers}, &mut response_headers)?;
+            let content = page("not_found", &mut stream, Post {data, headers}, &mut response_headers).await?;
             send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }

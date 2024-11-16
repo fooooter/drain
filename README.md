@@ -30,7 +30,7 @@ Server can be configured using config.json file. Currently available fields are:
 `response_headers` HashMap
 - `access_control` - here you can control, which resources will be returned to the client and which won't through a list
 of key-value pairs. In order to deny access to a resource, type "deny" (default action is "allow"). If you deny access,
-the client will get a 404 error, but this will be changeable in the future.
+the client will get a 404 error, but this will be changeable in the future. It uses Glob UNIX shell-like path syntax.
 - `bind` - bind host and port to the server.
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages.

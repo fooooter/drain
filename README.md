@@ -22,6 +22,19 @@ processed using Handlebars to make it further isolated from the executable itsel
 - To build the server, run `cargo build` in the root of a source.
 - To build the library containing the dynamic pages, run `cargo build` in dynamic_pages directory (don't forget to specify the binary in config.json)
 
+### Configuration
+
+Server can be configured using config.json file. Currently available fields are:
+
+- `global_response_headers` - it's a list of key-value pairs, which stand for default response headers appended to every
+`response_headers` HashMap
+- `access_control` - here you can control, which resources will be returned to the client and which won't through a list
+of key-value pairs. In order to deny access to a resource, type "deny" (default action is "allow"). If you deny access,
+the client will get a 404 error, but this will be changeable in the future.
+- `bind` - bind host and port to the server.
+- `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
+- `dynamic_pages_library` - a path to the dynamic library for dynamic pages.
+
 ### Usage
 
 Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
@@ -70,3 +83,4 @@ POST "data" is an application/x-www-form-urlencoded string (not already parsed y
 `response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
 changing content type to JSON, for example.
+

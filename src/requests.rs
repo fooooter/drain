@@ -91,7 +91,7 @@ impl Request {
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, parameters: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
+pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, params: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -120,8 +120,14 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        let content = page(&*resource_clone, &mut stream, Get {params: parameters, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
+        match page(&*resource_clone, &mut stream, Get {params, headers}, &mut response_headers).await {
+            Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
+            Err(e) => {
+                if let ErrorKind::NotFound = e {} else {
+                    return Err(e);
+                }
+            }
+        }
     }
 
     let file = File::open(&resource_clone).await;
@@ -172,8 +178,14 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        let content = page(&*resource_clone, &mut stream, Head {headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
+        match page(&*resource_clone, &mut stream, Head {headers}, &mut response_headers).await {
+            Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
+            Err(e) => {
+                if let ErrorKind::NotFound = e {} else {
+                    return Err(e);
+                }
+            }
+        }
     }
 
     let file = File::open(resource_clone).await;
@@ -231,8 +243,14 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        let content = page(&*resource_clone, &mut stream, Post {data, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
+        match page(&*resource_clone, &mut stream, Post {data, headers}, &mut response_headers).await {
+            Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
+            Err(e) => {
+                if let ErrorKind::NotFound = e {} else {
+                    return Err(e);
+                }
+            }
+        }
     }
 
     let file = File::open(resource_clone).await;

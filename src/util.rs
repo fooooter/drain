@@ -253,7 +253,7 @@ pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestD
         let p = if let Ok(s) = lib.get::<fn(RequestData, &mut HashMap<String, String>) -> String>(page.as_bytes()) {
             s
         } else {
-            return Err(ErrorKind::Other);
+            return Err(ErrorKind::NotFound);
         };
 
         Ok(p(request_data, &mut response_headers))

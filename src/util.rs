@@ -167,11 +167,16 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
     if let Err(e1) = stream.write_all(&*response_bytes).await {
         eprintln!("[send_response():{}] An error occurred while writing a response to a client:\n{:?}\nAttempting to close connection...", line!(), e1);
         if let Err(e2) = stream.shutdown().await {
-            eprintln!("[send_response():{}] Clean shutdown failed:\n{:?}", line!(), e2);
-            panic!("Unrecoverable errors occurred while handling connection:\n{e1}\n{e2}");
+            eprintln!("[receive_request():{}] FAILED. Error information:\n{:?}", line!(), e2);
         }
         panic!("Unrecoverable error occurred while handling connection.");
     }
+
+    if let Err(e) = stream.flush().await {
+        eprintln!("[send_response():{}] An error occurred while flushing the output stream:\n{:?}", line!(), e);
+        return Err(ErrorKind::ConnectionAborted);
+    }
+
     Ok(())
 }
 
@@ -180,7 +185,7 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
     let mut request_iter = reader.lines();
 
     let mut line = match request_iter.next_line().await {
-        Ok(line) => line.unwrap(),
+        Ok(l) => l.unwrap(),
         Err(e1) => {
             eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\n\
                         Attempting to close connection...", line!(), e1);
@@ -194,7 +199,7 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
     while !line.is_empty() {
         (*request).push_str(format!("{line}\r\n").as_str());
         line = match request_iter.next_line().await {
-            Ok(line) => line.unwrap(),
+            Ok(l) => l.unwrap(),
             Err(e1) => {
                 eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", line!(), e1);
                 if let Err(e2) = stream.shutdown().await {

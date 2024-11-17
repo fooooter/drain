@@ -2,7 +2,7 @@
 [✔]   	GET<br>
 [✔]   	OPTIONS<br>
 [✔]   	HEAD<br>
-[✔]   	POST<br>
+[✖]   	POST<br>
 [✖]   	Database connection<br>
 [✔]	Auto-detect MIME types<br>
 [✖]		Cookies<br>

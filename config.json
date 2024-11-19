@@ -9,8 +9,7 @@
   },
   "bind": "127.0.0.1:8080",
   "dynamic_pages": [
-    "index",
-    "oiasjdfs"
+    "index"
   ],
   "dynamic_pages_library": "libdynamic_pages.so"
 }

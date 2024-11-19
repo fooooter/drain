@@ -11,18 +11,18 @@ use crate::requests::RequestData::{Get, Head, Post};
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
     Head {resource: String, headers: HashMap<String, String>},
-    Post {resource: String, headers: HashMap<String, String>, data: String},
-    Put {resource: String, headers: HashMap<String, String>, data: String},
+    Post {resource: String, headers: HashMap<String, String>, data: Option<String>},
+    Put {resource: String, headers: HashMap<String, String>, data: Option<String>},
     Delete {resource: String, headers: HashMap<String, String>},
     Connect {resource: String, headers: HashMap<String, String>},
     Options {resource: String, headers: HashMap<String, String>},
     Trace {resource: String, headers: HashMap<String, String>},
-    Patch {resource: String, headers: HashMap<String, String>, data: String},
+    Patch {resource: String, headers: HashMap<String, String>, data: Option<String>},
 }
 
 pub enum RequestData<'a> {
     Get {params: &'a Option<HashMap<String, String>>, headers: &'a HashMap<String, String>},
-    Post {headers: &'a HashMap<String, String>, data: &'a String},
+    Post {headers: &'a HashMap<String, String>, data: &'a Option<String>},
     Head {headers: &'a HashMap<String, String>}
 }
 
@@ -65,26 +65,16 @@ impl Request {
             headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string());
         }
 
-        let data_iter = request_string.lines().skip(1)
-            .skip_while(|x| {
-                regex_headers.is_match(x)
-            });
-
-        let mut data = String::new();
-        for line in data_iter {
-            data.push_str(line);
-        }
-
         let req = match req_type.trim() {
             "GET" => Self::Get {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "HEAD" => Self::Head {resource, headers},
-            "POST" => Self::Post {resource, headers, data: if data.is_empty() {return Err(ErrorKind::InvalidInput)} else {data}},
-            "PUT" => Self::Put {resource, headers, data: if data.is_empty() {return Err(ErrorKind::InvalidInput)} else {data}},
+            "POST" => Self::Post {resource, headers, data: None},
+            "PUT" => Self::Put {resource, headers, data: None},
             "DELETE" => Self::Delete {resource, headers},
             "CONNECT" => Self::Connect {resource, headers},
             "OPTIONS" => Self::Options {resource, headers},
             "TRACE" => Self::Trace {resource, headers},
-            "PATCH" => Self::Patch {resource, headers, data: if data.is_empty() {return Err(ErrorKind::InvalidInput)} else {data}},
+            "PATCH" => Self::Patch {resource, headers, data: None},
             _ => return Err(ErrorKind::InvalidInput)
         };
         Ok(req)
@@ -207,7 +197,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &String) -> Result<(), ErrorKind> {
+pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &Option<String>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -263,7 +253,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 204, None, Some(content), false).await
         },
         Err(_) => {
-            let content = page("not_found", &mut stream, Post {data, headers}, &mut response_headers).await?;
+            let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await?;
             send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
         }
     }

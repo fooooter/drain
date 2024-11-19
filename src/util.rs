@@ -8,9 +8,10 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use bytes::BytesMut;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::{config, get_config};
-use crate::requests::RequestData;
+use crate::requests::{Request, RequestData};
 
 pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), ErrorKind> {
     let mut response = String::new();
@@ -180,26 +181,17 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
     Ok(())
 }
 
-pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
-    let reader = BufReader::new(&mut stream);
-    let mut request_iter = reader.lines();
+pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKind> {
+    let mut reader = BufReader::new(&mut *stream);
+    let mut request_string = String::new();
 
-    let mut line = match request_iter.next_line().await {
-        Ok(l) => l.unwrap(),
-        Err(e1) => {
-            eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\n\
-                        Attempting to close connection...", line!(), e1);
-            if let Err(e2) = stream.shutdown().await {
-                eprintln!("[receive_request():{}] FAILED. Error information:\n{:?}", line!(), e2);
-            }
-            panic!("Unrecoverable error occurred while handling a connection.");
-        }
-    };
-
-    while !line.is_empty() {
-        (*request).push_str(format!("{line}\r\n").as_str());
-        line = match request_iter.next_line().await {
-            Ok(l) => l.unwrap(),
+    loop {
+        match reader.read_line(&mut request_string).await {
+            Ok(l) => {
+                if l == 2 {
+                    break;
+                }
+            },
             Err(e1) => {
                 eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", line!(), e1);
                 if let Err(e2) = stream.shutdown().await {
@@ -209,6 +201,31 @@ pub async fn receive_request(mut stream: &mut TcpStream, request: &mut String) {
             }
         };
     }
+
+    let mut request = Request::parse_from_string(&request_string)?;
+
+    if let  Request::Post {ref mut data, headers, ..} |
+            Request::Put {ref mut data, headers, ..} |
+            Request::Patch {ref mut data, headers, ..} = &mut request {
+        let mut buffer = BytesMut::with_capacity(
+    if let Ok(s) = headers.get("Content-Length").unwrap_or(&String::from("0")).parse::<usize>() {
+                s
+            } else {
+                return Err(ErrorKind::InvalidInput);
+            }
+        );
+
+        if let Err(e1) = reader.read_buf(&mut buffer).await {
+            eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", line!(), e1);
+            if let Err(e2) = stream.shutdown().await {
+                eprintln!("[receive_request():{}] FAILED. Error information:\n{:?}", line!(), e2);
+            }
+            panic!("Unrecoverable error occurred while handling connection.");
+        }
+
+        *data = Some(String::from_utf8_lossy(&buffer).to_string());
+    }
+    Ok(request)
 }
 
 pub async fn rts_wrapper(f: &mut File, buf: &mut String, stream: &mut TcpStream) {

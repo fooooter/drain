@@ -13,11 +13,7 @@ use crate::util::*;
 use crate::config::config;
 
 async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
-    let mut request_string = String::new();
-
-    receive_request(&mut stream, &mut request_string).await;
-
-    match Request::parse_from_string(&request_string) {
+    match receive_request(&mut stream).await {
         Ok(request) => {
             match request {
                 Get {resource, params, headers} => handle_get(stream, &headers, &resource, &params).await,

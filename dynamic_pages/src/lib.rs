@@ -5,6 +5,6 @@ mod index;
 
 pub enum RequestData<'a> {
     Get {params: &'a Option<HashMap<String, String>>, headers: &'a HashMap<String, String>},
-    Post {headers: &'a HashMap<String, String>, data: &'a Option<String>},
+    Post {headers: &'a HashMap<String, String>, data: &'a Option<HashMap<String, String>>},
     Head {headers: &'a HashMap<String, String>}
 }

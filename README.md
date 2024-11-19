@@ -77,7 +77,7 @@ pub enum RequestData<'a> {
 }
 ```
 
-POST "data" is an application/x-www-form-urlencoded string (not already parsed yet; it'll be added soon) and GET
+POST "data" is an application/x-www-form-urlencoded string parsed to a HashMap and GET
 "params" are regular key-value pairs sent in the URL.
 
 `response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,

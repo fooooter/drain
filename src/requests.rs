@@ -11,18 +11,18 @@ use crate::requests::RequestData::{Get, Head, Post};
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
     Head {resource: String, headers: HashMap<String, String>},
-    Post {resource: String, headers: HashMap<String, String>, data: Option<String>},
-    Put {resource: String, headers: HashMap<String, String>, data: Option<String>},
+    Post {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
+    Put {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
     Delete {resource: String, headers: HashMap<String, String>},
     Connect {resource: String, headers: HashMap<String, String>},
     Options {resource: String, headers: HashMap<String, String>},
     Trace {resource: String, headers: HashMap<String, String>},
-    Patch {resource: String, headers: HashMap<String, String>, data: Option<String>},
+    Patch {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
 }
 
 pub enum RequestData<'a> {
     Get {params: &'a Option<HashMap<String, String>>, headers: &'a HashMap<String, String>},
-    Post {headers: &'a HashMap<String, String>, data: &'a Option<String>},
+    Post {headers: &'a HashMap<String, String>, data: &'a Option<HashMap<String, String>>},
     Head {headers: &'a HashMap<String, String>}
 }
 
@@ -43,12 +43,15 @@ impl Request {
         let resource_with_params = iter_req_line.next().unwrap().trim();
         let mut resource = resource_with_params.to_string();
         let mut params: HashMap<String, String> = HashMap::new();
+
         if request_line.contains('?') {
             resource = resource_with_params[..resource_with_params.find('?').unwrap()].parse::<String>().unwrap();
             let params_str = resource_with_params[resource_with_params.find('?').unwrap() + 1..].parse::<String>().unwrap();
 
             for kv in params_str.split('&') {
-                params.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string());
+                if let Some(_) = params.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
+                    return Err(ErrorKind::InvalidInput);
+                }
             }
         }
 
@@ -62,7 +65,9 @@ impl Request {
         let mut headers: HashMap<String, String> = HashMap::new();
 
         for header in headers_iter {
-            headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string());
+            if let Some(_) = headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string()) {
+                return Err(ErrorKind::InvalidInput);
+            }
         }
 
         let req = match req_type.trim() {
@@ -197,7 +202,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &Option<String>) -> Result<(), ErrorKind> {
+pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 

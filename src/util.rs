@@ -223,7 +223,16 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKin
             panic!("Unrecoverable error occurred while handling connection.");
         }
 
-        *data = Some(String::from_utf8_lossy(&buffer).to_string());
+        let data_raw = String::from_utf8_lossy(&buffer).to_string();
+        let mut data_hm: HashMap<String, String> = HashMap::new();
+
+        for kv in data_raw.split('&') {
+            if let Some(_) = &data_hm.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
+                return Err(ErrorKind::InvalidInput);
+            }
+        }
+
+        *data = Some(data_hm);
     }
     Ok(request)
 }

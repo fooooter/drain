@@ -45,5 +45,3 @@ async fn main() -> io::Result<()> {
         });
     }
 }
-
-

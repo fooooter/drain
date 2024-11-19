@@ -41,8 +41,7 @@ Each page should be a Rust module defined in a separate file, declared in lib.rs
 
 ```rust
 use std::collections::HashMap;
-use crate::RequestData::*;
-use crate::RequestData;
+use crate::RequestData::{*, self};
 
 #[no_mangle]
 pub fn example(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> String {

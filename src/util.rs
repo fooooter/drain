@@ -9,6 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use bytes::BytesMut;
+use glob::glob;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::{config, get_config};
 use crate::requests::{Request, RequestData};
@@ -289,4 +290,36 @@ pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestD
 
         Ok(p(request_data, &mut response_headers))
     }
+}
+
+pub async fn is_access_allowed(resource: &String, mut stream: &mut TcpStream) -> bool {
+    for (k, v) in config(Some(&mut stream)).await.access_control {
+        if let Ok(paths) = glob(&*k) {
+            for entry in paths.filter_map(Result::ok) {
+                if entry.to_string_lossy().eq(resource) {
+                    if v.eq("deny") {
+                        return false;
+                    }
+
+                    if !v.eq("allow") {
+                        eprintln!("[get_config():{}] A critical server config file is malformed.\n\
+                                    Error information: invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
+                                    Attempting to send Internal Server Error page to the client...", line!());
+
+                        if let Err(e) = internal_server_error(stream).await {
+                            eprintln!("[get_config():{}] FAILED. Error information: {:?}", line!(), e);
+                        }
+                        eprintln!("Attempting to close connection...");
+                        if let Err(e) = stream.shutdown().await {
+                            eprintln!("[get_config():{}] FAILED. Error information:\n{:?}", line!(), e);
+                        }
+                        panic!("Unrecoverable error occurred trying to set up connection.");
+                    }
+
+                    return true;
+                }
+            }
+        }
+    }
+    true
 }

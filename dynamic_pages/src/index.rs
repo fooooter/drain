@@ -15,9 +15,9 @@ pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, S
             Hello, world! {} request was sent.
         </body>
     </html>"#, match request_data {
-        Get { .. } => "GET",
-        Post { .. } => "POST",
-        Head { .. } => "HEAD",
+        Get {..} => "GET",
+        Post {..} => "POST",
+        Head {..} => "HEAD"
     }));
 
     response_headers.insert(String::from("Content-Type"), String::from("text/html; charset=utf-8"));

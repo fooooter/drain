@@ -3,7 +3,6 @@ use tokio::io::{ErrorKind};
 use tokio::fs::*;
 use tokio::net::TcpStream;
 use regex::*;
-use glob::*;
 use crate::util::*;
 use crate::config::config;
 use crate::requests::RequestData::{Get, Head, Post};
@@ -36,7 +35,9 @@ impl Request {
             return Err(ErrorKind::InvalidInput);
         }
 
-        let request_line = request_string.lines().next().unwrap();
+        let mut request_iter = request_string.lines();
+
+        let request_line = &request_iter.next().unwrap();
         let mut iter_req_line = request_line.split_whitespace();
 
         let req_type = iter_req_line.next().unwrap().to_uppercase();
@@ -57,7 +58,7 @@ impl Request {
 
         let regex_headers = Regex::new(r#"^([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)$"#).unwrap();
 
-        let headers_iter = request_string.lines().skip(1)
+        let headers_iter = request_iter
             .take_while(|x| {
                 regex_headers.is_match(x)
             });
@@ -101,17 +102,9 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    for (k, v) in config(Some(&mut stream)).await.access_control {
-        if let Ok(paths) = glob(&*k) {
-            for entry in paths.filter_map(Result::ok) {
-                if entry.to_string_lossy().eq(&resource_clone) {
-                    if v.eq("deny") {
-                        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-                        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
-                    }
-                }
-            }
-        }
+    if !is_access_allowed(&resource_clone, &mut stream).await {
+        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
+        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
@@ -159,17 +152,9 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    for (k, v) in config(Some(&mut stream)).await.access_control {
-        if let Ok(paths) = glob(&*k) {
-            for entry in paths.filter_map(Result::ok) {
-                if entry.to_string_lossy().eq(&resource_clone) {
-                    if v.eq("deny") {
-                        let content = page("not_found", &mut stream, Head {headers}, &mut response_headers).await?;
-                        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
-                    }
-                }
-            }
-        }
+    if !is_access_allowed(&resource_clone, &mut stream).await {
+        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
+        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
@@ -217,17 +202,9 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    for (k, v) in config(Some(&mut stream)).await.access_control {
-        if let Ok(paths) = glob(&*k) {
-            for entry in paths.filter_map(Result::ok) {
-                if entry.to_string_lossy().eq(&resource_clone) {
-                    if v.eq("deny") {
-                        let content = page("not_found", &mut stream, Post {data, headers}, &mut response_headers).await?;
-                        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
-                    }
-                }
-            }
-        }
+    if !is_access_allowed(&resource_clone, &mut stream).await {
+        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
+        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
     }
 
     if !headers.get("Content-Type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {

@@ -28,7 +28,11 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
             }
         },
         Err(e) => {
-            send_response(&mut stream, 400, None, None, false).await?;
+            if let ErrorKind::InvalidData = e {
+                send_response(&mut stream, 406, None, None, false).await?;
+            } else {
+                send_response(&mut stream, 400, None, None, false).await?;
+            }
             Err(e)
         }
     }

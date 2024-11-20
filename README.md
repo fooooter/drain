@@ -4,11 +4,12 @@
 [✔]   	HEAD<br>
 [✔]   	POST<br>
 [✖]   	Database connection<br>
-[✔]	    Auto-detect MIME types<br>
+[✔]	Auto-detect MIME types<br>
 [✖]		Cookies<br>
 [✖]		Sessions<br>
-[✔]	    Config (now JSON)<br>
-[✔]     Compression<br>
+[✔]	Config (now JSON)<br>
+[✔]     Compression (gzip for now)<br>
+[✔]     Decompression (gzip for now)
 
 ### This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
 
@@ -82,4 +83,3 @@ POST "data" is an application/x-www-form-urlencoded string parsed to a HashMap a
 `response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
 changing content type to JSON, for example.
-

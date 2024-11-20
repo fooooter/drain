@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use chrono::Utc;
 use flate2::Compression;
-use flate2::read::GzEncoder;
+use flate2::read::{GzDecoder, GzEncoder};
 use libloading::Library;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
@@ -122,7 +122,7 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
             let content_trim: &[u8] = c.trim().as_bytes();
             let mut content_prepared: Vec<u8> = Vec::new();
 
-            if let Some(encoding) = h.get(&String::from("Content-Encoding")) {
+            if let Some(encoding) = h.get("Content-Encoding") {
                 if encoding.eq("gzip") {
                     if let Err(e) = GzEncoder::new(content_trim, Compression::default()).read_to_end(&mut content_prepared) {
                         eprintln!("[send_response():{}] An error occurred while compressing the content of a response:\n{:?}\nAttempting to send uncompressed data...", line!(), e);
@@ -224,10 +224,33 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKin
             panic!("Unrecoverable error occurred while handling connection.");
         }
 
-        let data_raw = String::from_utf8_lossy(&buffer).to_string();
+        let mut data_raw: Vec<u8> = Vec::new();
+        let data_processed;
+
+        match (headers.get("Content-Encoding"), config(Some(stream)).await.global_response_headers.get("Accept-Encoding")) {
+            (Some(content_encoding), Some(accept_encoding)) if content_encoding.eq("gzip") && accept_encoding.eq("gzip") => {
+                if let Err(e) = GzDecoder::new(&*buffer).read_to_end(&mut data_raw) {
+                    eprintln!("[receive_request():{}] An error occurred while decompressing the request body:\n{:?}\n\
+                                Sending 406 status to the client...", line!(), e);
+
+                    return Err(ErrorKind::InvalidData);
+                }
+                data_processed = String::from_utf8_lossy(&data_raw).to_string();
+            },
+            (Some(content_encoding), Some(accept_encoding)) if content_encoding.eq("gzip") && !accept_encoding.eq("gzip") => {
+                return Err(ErrorKind::InvalidData);
+            },
+            (Some(_), None) => {
+                return Err(ErrorKind::InvalidData);
+            },
+            _ => {
+                data_processed = String::from_utf8_lossy(&buffer).to_string();
+            }
+        }
+
         let mut data_hm: HashMap<String, String> = HashMap::new();
 
-        for kv in data_raw.split('&') {
+        for kv in data_processed.split('&') {
             if let Some(_) = &data_hm.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
                 return Err(ErrorKind::InvalidInput);
             }

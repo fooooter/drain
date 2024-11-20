@@ -8,7 +8,6 @@ pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, S
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="main.css">
             <title>Index</title>
         </head>
         <body>

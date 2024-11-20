@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 use regex::*;
 use crate::util::*;
 use crate::config::config;
-use crate::requests::RequestData::{Get, Head, Post};
+use crate::requests::RequestData::{*};
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -66,9 +66,7 @@ impl Request {
         let mut headers: HashMap<String, String> = HashMap::new();
 
         for header in headers_iter {
-            if let Some(_) = headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string()) {
-                return Err(ErrorKind::InvalidInput);
-            }
+            headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string());
         }
 
         let req = match req_type.trim() {

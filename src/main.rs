@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use tokio::net::*;
 use tokio::*;
 use tokio::io::ErrorKind;
-use requests::Request::{Get, Head, Options, Post};
-use requests::*;
+use crate::requests::Request::{Get, Head, Options, Post};
+use crate::requests::*;
 use crate::util::*;
 use crate::config::config;
 

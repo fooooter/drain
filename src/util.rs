@@ -3,7 +3,7 @@ use std::io::Read;
 use chrono::Utc;
 use flate2::Compression;
 use flate2::read::GzEncoder;
-use libloading::{Library};
+use libloading::Library;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
 use tokio::io::AsyncWriteExt;

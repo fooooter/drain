@@ -48,7 +48,7 @@ async fn main() -> io::Result<()> {
         let (stream, _) = listener.accept().await?;
         spawn(async move {
             if let Err(e) = handle_connection(stream).await {
-                eprintln!("[main():{}] An error occurred while handling connection:\n{}\n", line!(), e)
+                eprintln!("[main():{}] An error occurred while handling connection:\n{}\n", line!(), e);
             }
         });
     }

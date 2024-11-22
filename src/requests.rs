@@ -167,11 +167,8 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             Err(e) => {
                 match e {
                     LibError::DlSym {..} => {},
-                    LibError::DlOpen {desc} => {
-                        eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct. Error information:\n{:?}\n", line!(), desc);
-                    },
                     _ => {
-                        eprintln!("[handle_head():{}] An error occurred while loading a dynamic library.", line!());
+                        eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
                         return Err(Box::new(e));
                     }
                 }
@@ -231,11 +228,8 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             Err(e) => {
                 match e {
                     LibError::DlSym {..} => {},
-                    LibError::DlOpen {desc} => {
-                        eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct. Error information:\n{:?}\n", line!(), desc);
-                    },
                     _ => {
-                        eprintln!("[handle_post():{}] An error occurred while loading a dynamic library.", line!());
+                        eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
                         return Err(Box::new(e));
                     }
                 }

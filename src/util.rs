@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::io::Read;
 use chrono::Utc;
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
-use libloading::Library;
+use libloading::{Library, Error as LibError};
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ErrorKind};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use bytes::BytesMut;
@@ -13,8 +14,11 @@ use glob::glob;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::{config, get_config};
 use crate::requests::{Request, RequestData};
+use crate::error::*;
 
-pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), ErrorKind> {
+type Page = fn(RequestData, &mut HashMap<String, String>) -> String;
+
+pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), Box<dyn Error>> {
     let mut response = String::new();
     let status_text = match status {
         100 => "Continue",
@@ -78,7 +82,7 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
         508 => "Loop Detected",
         510 => "Not Extended",
         511 => "Network Authentication Required",
-        _ => return Err(ErrorKind::InvalidInput)
+        _ => return Err(Box::new(ServerError::InvalidStatusCode(status)))
     };
     let status_line = format!("HTTP/1.1 {status} {status_text}\r\n");
     response.push_str(&*status_line);
@@ -176,13 +180,13 @@ pub async fn send_response(stream: &mut TcpStream, status: i32, local_response_h
 
     if let Err(e) = stream.flush().await {
         eprintln!("[send_response():{}] An error occurred while flushing the output stream:\n{:?}", line!(), e);
-        return Err(ErrorKind::ConnectionAborted);
+        return Err(Box::new(e));
     }
 
     Ok(())
 }
 
-pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKind> {
+pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerError> {
     let mut reader = BufReader::new(&mut *stream);
     let mut request_string = String::new();
 
@@ -209,10 +213,10 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKin
             Request::Put {ref mut data, headers, ..} |
             Request::Patch {ref mut data, headers, ..} = &mut request {
         let mut buffer = BytesMut::with_capacity(
-    if let Ok(s) = headers.get("Content-Length").unwrap_or(&String::from("0")).parse::<usize>() {
-                s
+            if let Ok(l) = headers.get("Content-Length").unwrap_or(&String::from("0")).parse::<usize>() {
+                l
             } else {
-                return Err(ErrorKind::InvalidInput);
+                return Err(ServerError::InvalidRequest);
             }
         );
 
@@ -233,15 +237,15 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKin
                     eprintln!("[receive_request():{}] An error occurred while decompressing the request body:\n{:?}\n\
                                 Sending 406 status to the client...", line!(), e);
 
-                    return Err(ErrorKind::InvalidData);
+                    return Err(ServerError::DecompressionError(e));
                 }
                 data_processed = String::from_utf8_lossy(&data_raw).to_string();
             },
             (Some(content_encoding), Some(accept_encoding)) if content_encoding.eq("gzip") && !accept_encoding.eq("gzip") => {
-                return Err(ErrorKind::InvalidData);
+                return Err(ServerError::UnsupportedEncoding);
             },
             (Some(_), None) => {
-                return Err(ErrorKind::InvalidData);
+                return Err(ServerError::UnsupportedEncoding);
             },
             _ => {
                 data_processed = String::from_utf8_lossy(&buffer).to_string();
@@ -252,7 +256,7 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ErrorKin
 
         for kv in data_processed.split('&') {
             if let Some(_) = &data_hm.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
-                return Err(ErrorKind::InvalidInput);
+                return Err(ServerError::UnsupportedEncoding);
             }
         }
 
@@ -297,19 +301,10 @@ pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
     }
 }
 
-pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, ErrorKind> {
+pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, LibError> {
     unsafe {
-        let lib = if let Ok(l) = Library::new(config(Some(stream)).await.dynamic_pages_library) {
-            l
-        } else {
-            return Err(ErrorKind::Other);
-        };
-
-        let p = if let Ok(s) = lib.get::<fn(RequestData, &mut HashMap<String, String>) -> String>(page.as_bytes()) {
-            s
-        } else {
-            return Err(ErrorKind::NotFound);
-        };
+        let lib = Library::new(config(Some(stream)).await.dynamic_pages_library)?;
+        let p = lib.get::<Page>(page.as_bytes())?;
 
         Ok(p(request_data, &mut response_headers))
     }

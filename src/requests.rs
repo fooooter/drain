@@ -1,11 +1,13 @@
+use std::error::Error;
 use std::collections::HashMap;
-use tokio::io::{ErrorKind};
 use tokio::fs::*;
 use tokio::net::TcpStream;
 use regex::*;
+use libloading::Error as LibError;
 use crate::util::*;
 use crate::config::config;
 use crate::requests::RequestData::{*};
+use crate::error::ServerError;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -26,13 +28,13 @@ pub enum RequestData<'a> {
 }
 
 impl Request {
-    pub fn parse_from_string(request_string: &String) -> Result<Self, ErrorKind> {
+    pub fn parse_from_string(request_string: &String) -> Result<Self, ServerError> {
         let general_regex = Regex::new(
             r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(((([A-Za-z0-9\-_]+\.[[:alnum:]]+/?)+)+|([A-Za-z0-9\-_]+/?)+)+(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
         ).unwrap();
 
         if !general_regex.is_match(request_string.as_str()) {
-            return Err(ErrorKind::InvalidInput);
+            return Err(ServerError::InvalidRequest);
         }
 
         let mut request_iter = request_string.lines();
@@ -51,7 +53,7 @@ impl Request {
 
             for kv in params_str.split('&') {
                 if let Some(_) = params.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
-                    return Err(ErrorKind::InvalidInput);
+                    return Err(ServerError::InvalidRequest);
                 }
             }
         }
@@ -79,13 +81,13 @@ impl Request {
             "OPTIONS" => Self::Options {resource, headers},
             "TRACE" => Self::Trace {resource, headers},
             "PATCH" => Self::Patch {resource, headers, data: None},
-            _ => return Err(ErrorKind::InvalidInput)
+            _ => return Err(ServerError::InvalidRequest),
         };
         Ok(req)
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, params: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
+pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -109,8 +111,12 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
         match page(&*resource_clone, &mut stream, Get {params, headers}, &mut response_headers).await {
             Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
             Err(e) => {
-                if let ErrorKind::NotFound = e {} else {
-                    return Err(e);
+                match e {
+                    LibError::DlSym {..} => {},
+                    _ => {
+                        eprintln!("[handle_get():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
+                        return Err(Box::new(e));
+                    }
                 }
             }
         }
@@ -140,7 +146,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 }
 
-pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String,) -> Result<(), ErrorKind> {
+pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String,) -> Result<(), Box<dyn Error>> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -159,8 +165,15 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
         match page(&*resource_clone, &mut stream, Head {headers}, &mut response_headers).await {
             Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
             Err(e) => {
-                if let ErrorKind::NotFound = e {} else {
-                    return Err(e);
+                match e {
+                    LibError::DlSym {..} => {},
+                    LibError::DlOpen {desc} => {
+                        eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct. Error information:\n{:?}\n", line!(), desc);
+                    },
+                    _ => {
+                        eprintln!("[handle_head():{}] An error occurred while loading a dynamic library.", line!());
+                        return Err(Box::new(e));
+                    }
                 }
             }
         }
@@ -185,7 +198,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &Option<HashMap<String, String>>) -> Result<(), ErrorKind> {
+pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
     let mut resource_clone = resource.clone();
     resource_clone.remove(0);
 
@@ -216,8 +229,15 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         match page(&*resource_clone, &mut stream, Post {data, headers}, &mut response_headers).await {
             Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
             Err(e) => {
-                if let ErrorKind::NotFound = e {} else {
-                    return Err(e);
+                match e {
+                    LibError::DlSym {..} => {},
+                    LibError::DlOpen {desc} => {
+                        eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct. Error information:\n{:?}\n", line!(), desc);
+                    },
+                    _ => {
+                        eprintln!("[handle_post():{}] An error occurred while loading a dynamic library.", line!());
+                        return Err(Box::new(e));
+                    }
                 }
             }
         }
@@ -239,7 +259,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
     }
 }
 
-pub async fn handle_options(mut stream: TcpStream, _headers: &HashMap<String, String>, _resource: &String) -> Result<(), ErrorKind> {
+pub async fn handle_options(mut stream: TcpStream, _headers: &HashMap<String, String>, _resource: &String) -> Result<(), Box<dyn Error>> {
     let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
     send_response(&mut stream, 204, Some(response_headers), None, false).await

@@ -2,17 +2,19 @@ mod requests;
 mod util;
 mod pages;
 mod config;
+mod error;
 
 use std::collections::HashMap;
+use std::error::Error;
 use tokio::net::*;
 use tokio::*;
-use tokio::io::ErrorKind;
 use crate::requests::Request::{Get, Head, Options, Post};
 use crate::requests::*;
 use crate::util::*;
 use crate::config::config;
+use crate::error::ServerError;
 
-async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
+async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
     match receive_request(&mut stream).await {
         Ok(request) => {
             match request {
@@ -28,12 +30,12 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), ErrorKind> {
             }
         },
         Err(e) => {
-            if let ErrorKind::InvalidData = e {
+            if let ServerError::DecompressionError(..) = e {
                 send_response(&mut stream, 406, None, None, false).await?;
             } else {
                 send_response(&mut stream, 400, None, None, false).await?;
             }
-            Err(e)
+            Err(Box::new(e))
         }
     }
 }
@@ -45,7 +47,9 @@ async fn main() -> io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         spawn(async move {
-            handle_connection(stream).await
+            if let Err(e) = handle_connection(stream).await {
+                eprintln!("[main():{}] An error occurred while handling connection:\n{}\n", line!(), e)
+            }
         });
     }
 }

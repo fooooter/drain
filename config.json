@@ -1,8 +1,7 @@
 {
   "global_response_headers": {
     "Connection": "keep-alive",
-    "Keep-Alive": "timeout=5, max=100",
-    "Accept-Encoding": "gzip"
+    "Keep-Alive": "timeout=5, max=100"
   },
   "access_control": {
     "example1.html": "allow",
@@ -12,5 +11,7 @@
   "dynamic_pages": [
     "index"
   ],
-  "dynamic_pages_library": "libdynamic_pages.so"
+  "dynamic_pages_library": "libdynamic_pages.so",
+  "supported_encodings":  ["gzip", "br"],
+  "use_encoding": "br"
 }

@@ -12,7 +12,9 @@ pub struct Config {
     pub access_control: HashMap<String, String>,
     pub bind: String,
     pub dynamic_pages: Vec<String>,
-    pub dynamic_pages_library: String
+    pub dynamic_pages_library: String,
+    pub supported_encodings: Vec<String>,
+    pub use_encoding: String
 }
 
 pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {

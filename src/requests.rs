@@ -93,13 +93,13 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if accepts_gzip(&headers) {
-        response_headers.insert(String::from("Content-Encoding"), String::from("gzip"));
-        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-    }
-
     if resource_clone.is_empty() {
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    }
+
+    if let Some(encoding) = get_response_encoding(&mut stream, &headers).await {
+        response_headers.insert(String::from("Content-Encoding"), encoding);
+        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
     }
 
     if !is_access_allowed(&resource_clone, &mut stream).await {
@@ -201,8 +201,8 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if accepts_gzip(&headers) {
-        response_headers.insert(String::from("Content-Encoding"), String::from("gzip"));
+    if let Some(encoding) = get_response_encoding(&mut stream, &headers).await {
+        response_headers.insert(String::from("Content-Encoding"), encoding);
         response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
     }
 

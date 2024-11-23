@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
 use chrono::Utc;
+use brotli::{BrotliCompress, BrotliDecompress};
+use brotli::enc::BrotliEncoderParams;
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use libloading::{Library, Error as LibError};
@@ -123,15 +125,24 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_h
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let content_trim: &[u8] = c.trim().as_bytes();
+            let mut content_trim: &[u8] = c.trim().as_bytes();
             let mut content_prepared: Vec<u8> = Vec::new();
 
             if let Some(encoding) = h.get("Content-Encoding") {
                 if encoding.eq("gzip") {
                     if let Err(e) = GzEncoder::new(content_trim, Compression::default()).read_to_end(&mut content_prepared) {
-                        eprintln!("[send_response():{}] An error occurred while compressing the content of a response:\n{:?}\nAttempting to send uncompressed data...", line!(), e);
+                        eprintln!("[send_response():{}] An error occurred while compressing the content of a response using GZIP:\n{e}\n\
+                                    Attempting to send uncompressed data...", line!());
                         content_prepared = c.trim().as_bytes().to_vec();
                     }
+                } else if encoding.eq("br") {
+                    if let Err(e) = BrotliCompress(&mut content_trim, &mut content_prepared, &BrotliEncoderParams::default()) {
+                        eprintln!("[send_response():{}] An error occurred while compressing the content of a response using GZIP:\n{e}\n\
+                                    Attempting to send uncompressed data...", line!());
+                        content_prepared = c.trim().as_bytes().to_vec();
+                    }
+                } else {
+                    content_prepared = c.trim().as_bytes().to_vec();
                 }
             }
 
@@ -171,15 +182,16 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_h
     }
 
     if let Err(e1) = stream.write_all(&*response_bytes).await {
-        eprintln!("[send_response():{}] An error occurred while writing a response to a client:\n{:?}\nAttempting to close connection...", line!(), e1);
+        eprintln!("[send_response():{}] An error occurred while writing a response to a client:\n{e1}\n\
+                    Attempting to close connection...", line!());
         if let Err(e2) = stream.shutdown().await {
-            eprintln!("[receive_request():{}] FAILED. Error information:\n{:?}", line!(), e2);
+            eprintln!("[receive_request():{}] FAILED. Error information:\n{e2}", line!());
         }
         panic!("Unrecoverable error occurred while handling connection.");
     }
 
     if let Err(e) = stream.flush().await {
-        eprintln!("[send_response():{}] An error occurred while flushing the output stream:\n{:?}", line!(), e);
+        eprintln!("[send_response():{}] An error occurred while flushing the output stream:\n{e}", line!());
         return Err(Box::new(e));
     }
 
@@ -198,9 +210,11 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerEr
                 }
             },
             Err(e1) => {
-                eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", line!(), e1);
+                eprintln!("[receive_request():{}] An error occurred while reading a request from a client.\n\
+                            Error information:\n{e1}\n\
+                            Attempting to close connection...", line!());
                 if let Err(e2) = stream.shutdown().await {
-                    eprintln!("[receive_request():{}] FAILED. Error information:\n{:?}", line!(), e2);
+                    eprintln!("[receive_request():{}] FAILED. Error information:\n{e2}", line!());
                 }
                 panic!("Unrecoverable error occurred while handling connection.");
             }
@@ -214,16 +228,22 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerEr
             Request::Patch {ref mut data, headers, ..} = &mut request {
         let mut buffer = BytesMut::with_capacity(
             if let Ok(l) = headers.get("Content-Length").unwrap_or(&String::from("0")).parse::<usize>() {
-                l
+                if l != 0 {
+                    l
+                } else {
+                    return Err(ServerError::InvalidRequest);
+                }
             } else {
                 return Err(ServerError::InvalidRequest);
             }
         );
 
         if let Err(e1) = reader.read_buf(&mut buffer).await {
-            eprintln!("[receive_request():{}] An error occurred while reading a request from a client. Error information:\n{:?}\nAttempting to close connection...", line!(), e1);
+            eprintln!("[receive_request():{}] An error occurred while reading a request from a client.\n\
+                        Error information:\n{e1}\n\
+                        Attempting to close connection...", line!());
             if let Err(e2) = stream.shutdown().await {
-                eprintln!("[receive_request():{}] FAILED. Error information:\n{:?}", line!(), e2);
+                eprintln!("[receive_request():{}] FAILED. Error information:\n{e2}", line!());
             }
             panic!("Unrecoverable error occurred while handling connection.");
         }
@@ -231,17 +251,31 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerEr
         let mut data_raw: Vec<u8> = Vec::new();
         let data_processed;
 
-        match (headers.get("Content-Encoding"), config(Some(stream)).await.global_response_headers.get("Accept-Encoding")) {
-            (Some(content_encoding), Some(accept_encoding)) if content_encoding.eq("gzip") && accept_encoding.eq("gzip") => {
-                if let Err(e) = GzDecoder::new(&*buffer).read_to_end(&mut data_raw) {
-                    eprintln!("[receive_request():{}] An error occurred while decompressing the request body:\n{:?}\n\
-                                Sending 406 status to the client...", line!(), e);
+        match (headers.get("Content-Encoding"), get_supported_encodings(stream).await) {
+            (Some(content_encoding), Some(supported_encodings))
+            if supported_encodings.contains(content_encoding) => {
+                if content_encoding.eq("gzip") {
+                    if let Err(e) = GzDecoder::new(&*buffer).read_to_end(&mut data_raw) {
+                        eprintln!("[receive_request():{}] An error occurred while decompressing the request body using GZIP:\n{e}\n\
+                                    Sending 406 status to the client...", line!());
 
-                    return Err(ServerError::DecompressionError(e));
+                        return Err(ServerError::DecompressionError(e));
+                    }
+                } else if content_encoding.eq("br") {
+                    if let Err(e) = BrotliDecompress(&mut &*buffer, &mut data_raw) {
+                        eprintln!("[receive_request():{}] An error occurred while decompressing the request body using GZIP:\n{e}\n\
+                                    Sending 406 status to the client...", line!());
+
+                        return Err(ServerError::DecompressionError(e));
+                    }
+                } else {
+                    return Err(ServerError::UnsupportedEncoding);
                 }
+
                 data_processed = String::from_utf8_lossy(&data_raw).to_string();
-            },
-            (Some(content_encoding), Some(accept_encoding)) if content_encoding.eq("gzip") && !accept_encoding.eq("gzip") => {
+            }
+            (Some(content_encoding), Some(supported_encodings))
+            if !supported_encodings.contains(content_encoding) => {
                 return Err(ServerError::UnsupportedEncoding);
             },
             (Some(_), None) => {
@@ -268,15 +302,14 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerEr
 pub async fn rts_wrapper(f: &mut File, buf: &mut String, stream: &mut TcpStream) {
     if let Err(e1) = f.read_to_string(buf).await {
         eprintln!("[rts_wrapper():{}] An error occurred after an attempt to read from a file: {:?}.\n\
-                   Error information:\n\
-                   {:?}\n\
-                   Attempting to send Internal Server Error page to the client...", line!(), f, e1);
+                   Error information:\n{e1}\n\
+                   Attempting to send Internal Server Error page to the client...", line!(), f);
         if let Err(e2) = internal_server_error(stream).await {
-            eprintln!("[rts_wrapper():{}] FAILED. Error information: {:?}", line!(), e2);
+            eprintln!("[rts_wrapper():{}] FAILED. Error information: {e2}", line!());
         }
         eprintln!("Attempting to close connection...");
         if let Err(e2) = stream.shutdown().await {
-            eprintln!("[rts_wrapper():{}] FAILED. Error information:\n{:?}", line!(), e2);
+            eprintln!("[rts_wrapper():{}] FAILED. Error information:\n{e2}", line!());
         }
         panic!("Unrecoverable error occurred while handling connection.");
     }
@@ -286,19 +319,6 @@ pub fn get_current_date() -> String {
     let dt = Utc::now();
     let dt_formatted = dt.format("%a, %e %b %Y %T GMT");
     dt_formatted.to_string()
-}
-
-pub fn accepts_gzip(headers: &HashMap<String, String>) -> bool {
-    if let Some(encodings_str) = headers.get("Accept-Encoding") {
-        let encodings: Vec<String> = encodings_str.split(',').map(|x| String::from(x.trim())).collect();
-
-        if encodings.contains(&String::from("gzip")) {
-            return true;
-        }
-        false
-    } else {
-        false
-    }
 }
 
 pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, LibError> {
@@ -320,16 +340,17 @@ pub async fn is_access_allowed(resource: &String, mut stream: &mut TcpStream) ->
                     }
 
                     if !v.eq("allow") {
-                        eprintln!("[get_config():{}] A critical server config file is malformed.\n\
-                                    Error information: invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
+                        eprintln!("[is_access_allowed():{}] A critical server config file is malformed.\n\
+                                    Error information:\n\
+                                    invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
                                     Attempting to send Internal Server Error page to the client...", line!());
 
                         if let Err(e) = internal_server_error(stream).await {
-                            eprintln!("[get_config():{}] FAILED. Error information: {:?}", line!(), e);
+                            eprintln!("[is_access_allowed():{}] FAILED. Error information: {e}", line!());
                         }
                         eprintln!("Attempting to close connection...");
                         if let Err(e) = stream.shutdown().await {
-                            eprintln!("[get_config():{}] FAILED. Error information:\n{:?}", line!(), e);
+                            eprintln!("[is_access_allowed():{}] FAILED. Error information:\n{e}", line!());
                         }
                         panic!("Unrecoverable error occurred trying to set up connection.");
                     }
@@ -340,4 +361,30 @@ pub async fn is_access_allowed(resource: &String, mut stream: &mut TcpStream) ->
         }
     }
     true
+}
+
+pub async fn get_supported_encodings(stream: &mut TcpStream) -> Option<Vec<String>> {
+    let supported_encodings = config(Some(stream)).await.supported_encodings;
+
+    if supported_encodings.is_empty() {
+        None
+    } else {
+        Some(supported_encodings)
+    }
+}
+
+pub async fn get_response_encoding(stream: &mut TcpStream, headers: &HashMap<String, String>) -> Option<String> {
+    let encoding = config(Some(stream)).await.use_encoding;
+
+    if let (Some(content_encoding), Some(supported_encodings)) = (headers.get("Accept-Encoding"), get_supported_encodings(stream).await) {
+        let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
+
+        if accepted_encodings.contains(&encoding) && supported_encodings.contains(&encoding) {
+            Some(encoding)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }

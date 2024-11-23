@@ -38,6 +38,8 @@ the client will get a 404 error, but this will be changeable in the future. It u
 - `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
 - `use_encoding` - a name of encoding which will be used to compress the response body. It should match the `supported_encodings` field.
 
+Changing the `bind` field requires restarting the server for it to take effect.
+
 ### Usage
 
 Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:

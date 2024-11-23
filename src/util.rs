@@ -144,6 +144,8 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_h
                 } else {
                     content_prepared = c.trim().as_bytes().to_vec();
                 }
+            } else {
+                content_prepared = c.trim().as_bytes().to_vec();
             }
 
             let content_length_header = format!("Content-Length: {}\r\n\r\n", content_prepared.len());

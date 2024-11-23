@@ -8,8 +8,8 @@
 [✖]		Cookies<br>
 [✖]		Sessions<br>
 [✔]	Config (now JSON)<br>
-[✔]     Compression (gzip for now)<br>
-[✔]     Decompression (gzip for now)
+[✔]     Compression (GZIP and Brotli for now)<br>
+[✔]     Decompression (GZIP for Brotli now)
 
 ### This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
 
@@ -35,6 +35,8 @@ the client will get a 404 error, but this will be changeable in the future. It u
 - `bind` - bind host and port to the server.
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages.
+- `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
+- `use_encoding` - a name of encoding which will be used to compress the response body. It should match the `supported_encodings` field.
 
 ### Usage
 

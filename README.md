@@ -9,7 +9,8 @@
 [✖]		Sessions<br>
 [✔]	Config (now JSON)<br>
 [✔]     Compression (GZIP and Brotli for now)<br>
-[✔]     Decompression (GZIP and Brotli for now)
+[✔]     Decompression (GZIP and Brotli for now)<br>
+[✖]		TLS
 
 ### This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
 

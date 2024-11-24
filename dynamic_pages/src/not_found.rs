@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::RequestData;
 
 #[no_mangle]
-pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<String, String>) -> String {
+pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<String, String>) -> Option<String> {
     let content = String::from(r#"
     <!DOCTYPE html>
         <head>
@@ -18,5 +18,5 @@ pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<S
 
     response_headers.insert(String::from("Content-Type"), String::from("text/html; charset=utf-8"));
 
-    content
+    Some(content)
 }

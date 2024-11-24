@@ -97,19 +97,25 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if let Some(encoding) = get_response_encoding(&mut stream, &headers).await {
-        response_headers.insert(String::from("Content-Encoding"), encoding);
-        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-    }
-
     if !is_access_allowed(&resource_clone, &mut stream).await {
         let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
+        return send_response(&mut stream, 404, Some(response_headers), content, false).await;
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
         match page(&*resource_clone, &mut stream, Get {params, headers}, &mut response_headers).await {
-            Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
+            Ok(content) => {
+                if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
+                    response_headers.insert(String::from("Content-Encoding"), encoding);
+                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                }
+
+                if let Some(_) = &response_headers.get("Location") {
+                    return send_response(&mut stream, 302, Some(response_headers), content, false).await;
+                }
+
+                return send_response(&mut stream, 200, Some(response_headers), content, false).await;
+            }
             Err(e) => {
                 match e {
                     LibError::DlSym {..} => {},
@@ -123,11 +129,12 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 
     let file = File::open(&resource_clone).await;
-    let mut content = String::new();
 
     match file {
         Ok(mut f) => {
+            let mut content = String::new();
             rts_wrapper(&mut f, &mut content, &mut stream).await;
+            let content_empty = content.is_empty();
 
             let type_guess = if let Some(guess) = mime_guess::from_path(resource_clone).first() {
                 guess.to_string()
@@ -135,13 +142,24 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
                 String::from("application/octet-stream")
             };
 
+            if let (Some(encoding), false) = (get_response_encoding(&mut stream, &headers).await, content_empty) {
+                response_headers.insert(String::from("Content-Encoding"), encoding);
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
             response_headers.insert(String::from("Content-Type"), type_guess);
 
-            send_response(&mut stream, 200, Some(response_headers), Some(content), false).await
+            send_response(&mut stream, 200, Some(response_headers), if !content_empty {Some(content)} else {None}, false).await
         },
         Err(_) => {
-            content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-            send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
+            let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
+
+            if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
+                response_headers.insert(String::from("Content-Encoding"), encoding);
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            send_response(&mut stream, 404, Some(response_headers), content, false).await
         }
     }
 }
@@ -158,12 +176,23 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
 
     if !is_access_allowed(&resource_clone, &mut stream).await {
         let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
+        return send_response(&mut stream, 404, Some(response_headers), content, false).await;
     }
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
         match page(&*resource_clone, &mut stream, Head {headers}, &mut response_headers).await {
-            Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
+            Ok(content) => {
+                if let Some(c) = content {
+                    let content_length = c.len().to_string();
+                    response_headers.insert(String::from("Content-Length"), content_length);
+                }
+
+                if let Some(_) = &response_headers.get("Location") {
+                    return send_response(&mut stream, 302, Some(response_headers), None, false).await;
+                }
+
+                return send_response(&mut stream, 200, Some(response_headers), None, false).await;
+            },
             Err(e) => {
                 match e {
                     LibError::DlSym {..} => {},
@@ -177,20 +206,20 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 
     let file = File::open(resource_clone).await;
-    let mut content = String::new();
 
     match file {
         Ok(mut f) => {
+            let mut content = String::new();
             rts_wrapper(&mut f, &mut content, &mut stream).await;
 
-            let content_length_string = content.len().to_string();
-            response_headers.insert(String::from("Content-Length"), content_length_string);
+            let content_length = content.len().to_string();
+            response_headers.insert(String::from("Content-Length"), content_length);
 
             send_response(&mut stream, 200, Some(response_headers), None, false).await
         },
         Err(_) => {
-            content = page("not_found", &mut stream, Head {headers}, &mut response_headers).await?;
-            send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
+            let content = page("not_found", &mut stream, Head {headers}, &mut response_headers).await?;
+            send_response(&mut stream, 404, Some(response_headers), content, false).await
         }
     }
 }
@@ -201,18 +230,13 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if let Some(encoding) = get_response_encoding(&mut stream, &headers).await {
-        response_headers.insert(String::from("Content-Encoding"), encoding);
-        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-    }
-
     if resource_clone.is_empty() {
         resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
     if !is_access_allowed(&resource_clone, &mut stream).await {
         let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 404, Some(response_headers), Some(content), false).await;
+        return send_response(&mut stream, 404, Some(response_headers), content, false).await;
     }
 
     if !headers.get("Content-Type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
@@ -224,7 +248,18 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
 
     if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
         match page(&*resource_clone, &mut stream, Post {data, headers}, &mut response_headers).await {
-            Ok(content) => return send_response(&mut stream, 200, Some(response_headers), Some(content), false).await,
+            Ok(content) => {
+                if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
+                    response_headers.insert(String::from("Content-Encoding"), encoding);
+                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                }
+
+                if let Some(_) = &response_headers.get("Location") {
+                    return send_response(&mut stream, 302, Some(response_headers), content, false).await;
+                }
+
+                return send_response(&mut stream, 200, Some(response_headers), content, false).await;
+            },
             Err(e) => {
                 match e {
                     LibError::DlSym {..} => {},
@@ -237,18 +272,34 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         }
     }
 
-    let file = File::open(resource_clone).await;
-
-    let mut content = String::new();
+    let file = File::open(&resource_clone).await;
 
     match file {
         Ok(mut f) => {
+            // rts_wrapper(&mut f, &mut content, &mut stream).await;
+            // send_response(&mut stream, 204, None, Some(content), false).await
+            let mut content = String::new();
             rts_wrapper(&mut f, &mut content, &mut stream).await;
-            send_response(&mut stream, 204, None, Some(content), false).await
+            let content_empty = content.is_empty();
+
+            let type_guess = if let Some(guess) = mime_guess::from_path(resource_clone).first() {
+                guess.to_string()
+            } else {
+                String::from("application/octet-stream")
+            };
+
+            if let (Some(encoding), false) = (get_response_encoding(&mut stream, &headers).await, content_empty) {
+                response_headers.insert(String::from("Content-Encoding"), encoding);
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            response_headers.insert(String::from("Content-Type"), type_guess);
+
+            send_response(&mut stream, 204, Some(response_headers), if !content_empty {Some(content)} else {None}, false).await
         },
         Err(_) => {
             let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await?;
-            send_response(&mut stream, 404, Some(response_headers), Some(content), false).await
+            send_response(&mut stream, 404, Some(response_headers), content, false).await
         }
     }
 }

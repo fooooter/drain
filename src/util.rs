@@ -18,7 +18,7 @@ use crate::config::{config, get_config};
 use crate::requests::{Request, RequestData};
 use crate::error::*;
 
-type Page = fn(RequestData, &mut HashMap<String, String>) -> String;
+type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<String>;
 
 pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), Box<dyn Error>> {
     let mut response = String::new();
@@ -323,7 +323,7 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<String, LibError> {
+pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<String>, LibError> {
     unsafe {
         let lib = Library::new(config(Some(stream)).await.dynamic_pages_library)?;
         let p = lib.get::<Page>(page.as_bytes())?;

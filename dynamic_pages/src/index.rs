@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::RequestData::{self, *};
 
 #[no_mangle]
-pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> String {
+pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<String> {
     let content = String::from(format!(r#"
     <!DOCTYPE html>
         <head>
@@ -21,5 +21,5 @@ pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, S
 
     response_headers.insert(String::from("Content-Type"), String::from("text/html; charset=utf-8"));
 
-    content
+    Some(content)
 }

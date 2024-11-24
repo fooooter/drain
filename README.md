@@ -1,4 +1,4 @@
-### Progress done so far (and TODO in the future):
+## Progress done so far (and TODO in the future):
 [✔]   	GET<br>
 [✔]   	OPTIONS<br>
 [✔]   	HEAD<br>
@@ -10,21 +10,20 @@
 [✔]	Config (now JSON)<br>
 [✔]     Compression (GZIP and Brotli for now)<br>
 [✔]     Decompression (GZIP and Brotli for now)<br>
-[✖]		TLS
+[✖]		TLS<br>
+[✔]	Redirections<br>
 
-### This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
+## This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
 
 Dynamic pages are generated inside a dynamic library, so that it's easy to create them without modifying
-the core and recompiling the server only to change one thing on a page. As of right now, such a page is
-partially hardcoded into the library, but I'm planning to make it loaded from a file as a template and
-processed using Handlebars to make it further isolated from the executable itself.
+the core and recompiling the server only to change one thing on a page.
 
-### Build
+## Build
 
 - To build the server, run `cargo build` in the root of a source.
 - To build the library containing the dynamic pages, run `cargo build` in dynamic_pages directory (don't forget to specify the binary in config.json)
 
-### Configuration
+## Configuration
 
 Server can be configured using config.json file. Currently available fields are:
 
@@ -41,35 +40,39 @@ the client will get a 404 error, but this will be changeable in the future. It u
 
 Changing the `bind` field requires restarting the server for it to take effect, but the rest is applied dynamically once the config is saved.
 
-### Usage
+## Usage
 
 Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
 
 ```rust
 use std::collections::HashMap;
-use crate::RequestData::{*, self};
+use crate::RequestData::{self, *};
 
 #[no_mangle]
-pub fn example(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> String {
-    let content = String::from(r#"
+pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<String> {
+    let content = String::from(format!(r#"
     <!DOCTYPE html>
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="main.css">
-            <title>Example</title>
+            <title>Index</title>
         </head>
         <body>
-            Hello, world!
+            Hello, world! {} request was sent.
         </body>
-    </html>"#
-    );
+    </html>"#, match request_data {
+        Get {..} => "GET",
+        Post {..} => "POST",
+        Head {..} => "HEAD"
+    }));
 
     response_headers.insert(String::from("Content-Type"), String::from("text/html; charset=utf-8"));
 
-    content
+    Some(content)
 }
 ```
+
+### RequestData
 
 `RequestData` is a struct-like Enum, which has variants, that tell, what kind of HTTP request method was used and stores
 request headers and data specific to each variant.
@@ -82,9 +85,15 @@ pub enum RequestData<'a> {
 }
 ```
 
-POST "data" is an application/x-www-form-urlencoded string parsed to a HashMap and GET
-"params" are regular key-value pairs sent in the URL.
+POST `data` is an application/x-www-form-urlencoded string parsed to a HashMap and GET
+`params` are regular key-value pairs sent in the URL.
 
 `response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
 changing content type to JSON, for example.
+
+### Redirections
+
+Redirections are done once you append the `Location` header to `response_headers` in a dynamic page. 
+It's up to you, whether a page should return content in redirection response or not, but it's preferred to 
+return `None` after specifying `Location`. The status code is set by default to 302, but this will be changeable very soon.

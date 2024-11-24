@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::env;
+use std::env::VarError;
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,12 +16,27 @@ pub struct Config {
     pub dynamic_pages: Vec<String>,
     pub dynamic_pages_library: String,
     pub supported_encodings: Vec<String>,
-    pub use_encoding: String
+    pub use_encoding: String,
+    pub document_root: String
 }
 
 pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {
+    let config_path = env::var("WEB_SERVER_CONFIG");
+    let config_file;
+
+    match &config_path {
+        Ok(c_f) => {
+            config_file = File::open(c_f).await;
+        }
+        Err(e) => {
+            eprintln!("[get_config():{}] A critical server config file wasn't found.\n\
+                        Error information:\n\
+                        {}", line!(), *e);
+            panic!("Unrecoverable error occurred while trying to set up connection.");
+        }
+    }
+
     let mut json_str: String = String::new();
-    let config_file = File::open("config.json").await;
 
     if let Some(s) = stream {
         match config_file {
@@ -29,14 +46,14 @@ pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {
             Err(e1) => {
                 eprintln!("[get_config():{}] A critical server config file wasn't found.\n\
                            Error information:\n\
-                           {:?}\n\
-                           Attempting to send Internal Server Error page to the client...", line!(), e1);
+                           {e1}\n\
+                           Attempting to send Internal Server Error page to the client...", line!());
                 if let Err(e2) = internal_server_error(s).await {
-                    eprintln!("[get_config():{}] FAILED. Error information: {:?}", line!(), e2);
+                    eprintln!("[get_config():{}] FAILED. Error information: {e2}", line!());
                 }
                 eprintln!("Attempting to close connection...");
                 if let Err(e2) = s.shutdown().await {
-                    eprintln!("[get_config():{}] FAILED. Error information:\n{:?}", line!(), e2);
+                    eprintln!("[get_config():{}] FAILED. Error information:\n{e2}", line!());
                 }
                 panic!("Unrecoverable error occurred while handling connection.");
             }
@@ -47,14 +64,14 @@ pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {
             Err(e1) => {
                 eprintln!("[get_config():{}] A critical server config file is malformed.\n\
                                Error information:\n\
-                               {:?}\n\
-                               Attempting to send Internal Server Error page to the client...", line!(), e1);
+                               {e1}\n\
+                               Attempting to send Internal Server Error page to the client...", line!());
                 if let Err(e2) = internal_server_error(s).await {
-                    eprintln!("[get_config():{}] FAILED. Error information: {:?}", line!(), e2);
+                    eprintln!("[get_config():{}] FAILED. Error information: {e2}", line!());
                 }
                 eprintln!("Attempting to close connection...");
                 if let Err(e2) = s.shutdown().await {
-                    eprintln!("[get_config():{}] FAILED. Error information:\n{:?}", line!(), e2);
+                    eprintln!("[get_config():{}] FAILED. Error information:\n{e2}", line!());
                 }
                 panic!("Unrecoverable error occurred while handling connection.");
             }
@@ -65,15 +82,15 @@ pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {
                 if let Err(e) = f.read_to_string(&mut json_str).await {
                     eprintln!("[get_config():{}] An error occurred after an attempt to read from a file: {:?}.\n\
                                Error information:\n\
-                               {:?}\n", line!(), f, e);
+                               {e}\n", line!(), f);
                     panic!("Unrecoverable error occurred while trying to set up connection.");
                 }
             },
-            Err(e1) => {
+            Err(e) => {
                 eprintln!("[get_config():{}] A critical server config file wasn't found.\n\
                             Error information:\n\
-                            {:?}", line!(), e1);
-                panic!("Unrecoverable error occurred trying to set up connection.");
+                            {e}", line!());
+                panic!("Unrecoverable error occurred while trying to set up connection.");
             }
         }
 
@@ -82,8 +99,8 @@ pub async fn get_config(stream: Option<&mut TcpStream>) -> Config {
             Err(e) => {
                 eprintln!("[get_config():{}] A critical server config file is malformed.\n\
                            Error information:\n\
-                           {:?}", line!(), e);
-                panic!("Unrecoverable error occurred trying to set up connection.");
+                           {e}", line!());
+                panic!("Unrecoverable error occurred while trying to set up connection.");
             }
         }
     }

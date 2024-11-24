@@ -20,7 +20,7 @@ use crate::error::*;
 
 type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<String>;
 
-pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), Box<dyn Error>> {
+pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), Box<dyn Error>> {
     let mut response = String::new();
     let status_text = match status {
         100 => "Continue",
@@ -91,9 +91,7 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_h
 
     let date = get_current_date();
 
-    let mut local_response_headers_clone = local_response_headers.clone();
-
-    if let Some(ref mut h) = local_response_headers_clone {
+    if let Some(ref mut h) = &mut local_response_headers {
         h.remove("Date");
     }
 
@@ -109,7 +107,7 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, local_response_h
 
     let mut response_bytes: Vec<u8>;
 
-    match (local_response_headers_clone, content) {
+    match (local_response_headers, content) {
         (Some(ref mut h), Some(c)) => {
             h.remove("Content-Length");
 

@@ -87,23 +87,22 @@ impl Request {
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
-    let mut resource_clone = resource.clone();
-    resource_clone.remove(0);
+pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
+    resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if resource_clone.is_empty() {
-        resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    if resource.is_empty() {
+        resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if !is_access_allowed(&resource_clone, &mut stream).await {
+    if !is_access_allowed(&resource, &mut stream).await {
         let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
         return send_response(&mut stream, 404, Some(response_headers), content, false).await;
     }
 
-    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        match page(&*resource_clone, &mut stream, Get {params, headers}, &mut response_headers).await {
+    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource) {
+        match page(&*resource, &mut stream, Get {params, headers}, &mut response_headers).await {
             Ok(content) => {
                 if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
                     response_headers.insert(String::from("Content-Encoding"), encoding);
@@ -128,7 +127,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
         }
     }
 
-    let file = File::open(&resource_clone).await;
+    let file = File::open(&resource).await;
 
     match file {
         Ok(mut f) => {
@@ -136,7 +135,7 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             rts_wrapper(&mut f, &mut content, &mut stream).await;
             let content_empty = content.is_empty();
 
-            let type_guess = if let Some(guess) = mime_guess::from_path(resource_clone).first() {
+            let type_guess = if let Some(guess) = mime_guess::from_path(resource).first() {
                 guess.to_string()
             } else {
                 String::from("application/octet-stream")
@@ -164,23 +163,22 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
     }
 }
 
-pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String,) -> Result<(), Box<dyn Error>> {
-    let mut resource_clone = resource.clone();
-    resource_clone.remove(0);
+pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>> {
+    resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if resource_clone.is_empty() {
-        resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    if resource.is_empty() {
+        resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if !is_access_allowed(&resource_clone, &mut stream).await {
+    if !is_access_allowed(&resource, &mut stream).await {
         let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
         return send_response(&mut stream, 404, Some(response_headers), content, false).await;
     }
 
-    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        match page(&*resource_clone, &mut stream, Head {headers}, &mut response_headers).await {
+    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource) {
+        match page(&*resource, &mut stream, Head {headers}, &mut response_headers).await {
             Ok(content) => {
                 if let Some(c) = content {
                     let content_length = c.len().to_string();
@@ -205,7 +203,7 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
         }
     }
 
-    let file = File::open(resource_clone).await;
+    let file = File::open(resource).await;
 
     match file {
         Ok(mut f) => {
@@ -224,17 +222,16 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, resource: &String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
-    let mut resource_clone = resource.clone();
-    resource_clone.remove(0);
+pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
+    resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if resource_clone.is_empty() {
-        resource_clone = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+    if resource.is_empty() {
+        resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if !is_access_allowed(&resource_clone, &mut stream).await {
+    if !is_access_allowed(&resource, &mut stream).await {
         let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
         return send_response(&mut stream, 404, Some(response_headers), content, false).await;
     }
@@ -246,8 +243,8 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         return send_response(&mut stream, 415, Some(response_headers), None, false).await;
     }
 
-    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource_clone) {
-        match page(&*resource_clone, &mut stream, Post {data, headers}, &mut response_headers).await {
+    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource) {
+        match page(&*resource, &mut stream, Post {data, headers}, &mut response_headers).await {
             Ok(content) => {
                 if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
                     response_headers.insert(String::from("Content-Encoding"), encoding);
@@ -272,7 +269,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         }
     }
 
-    let file = File::open(&resource_clone).await;
+    let file = File::open(&resource).await;
 
     match file {
         Ok(mut f) => {
@@ -282,7 +279,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             rts_wrapper(&mut f, &mut content, &mut stream).await;
             let content_empty = content.is_empty();
 
-            let type_guess = if let Some(guess) = mime_guess::from_path(resource_clone).first() {
+            let type_guess = if let Some(guess) = mime_guess::from_path(resource).first() {
                 guess.to_string()
             } else {
                 String::from("application/octet-stream")
@@ -304,7 +301,7 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
     }
 }
 
-pub async fn handle_options(mut stream: TcpStream, _headers: &HashMap<String, String>, _resource: &String) -> Result<(), Box<dyn Error>> {
+pub async fn handle_options(mut stream: TcpStream, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>> {
     let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
     send_response(&mut stream, 204, Some(response_headers), None, false).await

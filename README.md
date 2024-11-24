@@ -28,7 +28,7 @@ the core and recompiling the server only to change one thing on a page.
 Server can be configured using config.json file. Currently available fields are:
 
 - `global_response_headers` - it's a list of key-value pairs, which stand for default response headers appended to every
-`response_headers` HashMap
+`response_headers` HashMap.
 - `access_control` - here you can control, which resources will be returned to the client and which won't through a list
 of key-value pairs. In order to deny access to a resource, type "deny" (default action is "allow"). If you deny access,
 the client will get a 404 error, but this will be changeable in the future. It uses Glob UNIX shell-like path syntax.
@@ -37,8 +37,9 @@ the client will get a 404 error, but this will be changeable in the future. It u
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages.
 - `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
 - `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
+- `document_root` - self-explanatory.
 
-Changing the `bind` field requires restarting the server for it to take effect, but the rest is applied dynamically once the config is saved.
+Changing the `bind` and `document_root` fields requires restarting the server for it to take effect, but the rest is applied dynamically once the config is saved.
 
 ## Usage
 

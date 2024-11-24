@@ -325,8 +325,9 @@ pub fn get_current_date() -> String {
 
 pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<String>, LibError> {
     unsafe {
+        let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(config(Some(stream)).await.dynamic_pages_library)?;
-        let p = lib.get::<Page>(page.as_bytes())?;
+        let p = lib.get::<Page>(page_symbol.as_bytes())?;
 
         Ok(p(request_data, &mut response_headers))
     }

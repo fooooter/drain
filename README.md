@@ -42,13 +42,15 @@ Changing the `bind` field requires restarting the server for it to take effect, 
 
 ## Usage
 
+### Structure
+
 Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
 
 ```rust
 use std::collections::HashMap;
 use crate::RequestData::{self, *};
 
-#[no_mangle]
+#[export_name = "index"]
 pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<String> {
     let content = String::from(format!(r#"
     <!DOCTYPE html>
@@ -71,6 +73,15 @@ pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, S
     Some(content)
 }
 ```
+
+### Naming convention
+
+You can name these pages however you like, but keep in mind there's a naming convention.
+`::` is a separator, which simulates a directory structure (it's equivalent to `/`, but for the sake of being accepted by the linker
+unlike `/`, it was used instead of that). Don't worry, in config.json and in URL bar, it's still `/`, but it's converted to `::` automatically
+by the server. At first, it can be easily confused with module paths, but take `app::login` as an example. In this case, 
+`app` corresponds to a module, in which a submodule `login` containing a function (page) `login` resides, but as the page is named identically
+to the module it resides in, it's just `app::login` instead of `app::login::login`. It's equivalent to the following resource specifier: `app/login`.
 
 ### RequestData
 

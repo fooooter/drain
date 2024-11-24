@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::RequestData;
 
-#[no_mangle]
+#[export_name = "not_found"]
 pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<String, String>) -> Option<String> {
     let content = String::from(r#"
     <!DOCTYPE html>

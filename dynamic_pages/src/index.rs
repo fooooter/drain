@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::RequestData::{self, *};
 
-#[no_mangle]
+#[export_name = "index"]
 pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<String> {
     let content = String::from(format!(r#"
     <!DOCTYPE html>

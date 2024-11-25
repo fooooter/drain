@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::env::VarError;
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

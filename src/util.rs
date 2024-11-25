@@ -90,11 +90,6 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_respon
     response.push_str(&*status_line);
 
     let date = get_current_date();
-
-    if let Some(ref mut h) = &mut local_response_headers {
-        h.remove("Date");
-    }
-
     let date_header = format!("Date: {}\r\n", date);
     response.push_str(&*date_header);
 
@@ -103,21 +98,12 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_respon
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };
-    let mut global_response_headers_clone = global_response_headers.clone();
 
     let mut response_bytes: Vec<u8>;
 
-    match (local_response_headers, content) {
+    match (&mut local_response_headers, content) {
         (Some(ref mut h), Some(c)) => {
-            h.remove("Content-Length");
-
-            for (k, _) in global_response_headers {
-                if h.contains_key(&k) {
-                    global_response_headers_clone.remove(&k);
-                }
-            }
-
-            h.extend(global_response_headers_clone);
+            h.extend(global_response_headers);
 
             for (k, v) in &mut *h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
@@ -161,13 +147,7 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_respon
             response_bytes = response.as_bytes().to_vec();
         },
         (Some(ref mut h), None) => {
-            for (k, _) in global_response_headers {
-                if h.contains_key(&k) {
-                    global_response_headers_clone.remove(&k);
-                }
-            }
-
-            h.extend(global_response_headers_clone);
+            h.extend(global_response_headers);
 
             for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));

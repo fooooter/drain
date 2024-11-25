@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 use regex::*;
 use libloading::Error as LibError;
 use crate::util::*;
-use crate::config::config;
+use crate::config::Config;
 use crate::requests::RequestData::{*};
 use crate::error::ServerError;
 
@@ -87,7 +87,7 @@ impl Request {
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
+pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -96,16 +96,26 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
         resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if !is_access_allowed(&resource, &mut stream).await {
-        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 404, Some(response_headers), content, false).await;
+    if !config.is_access_allowed(&resource, &mut stream).await {
+        let deny_action = config.get_deny_action();
+        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Get {params: &None, headers}, &mut response_headers).await;
+
+        if let Ok(c) = content {
+            if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            return send_response(&mut stream, deny_action, Some(response_headers), c, false).await
+        }
+        return send_response(&mut stream, deny_action, Some(response_headers), None, false).await
     }
 
-    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource) {
+    if config.dynamic_pages.contains(&resource) {
         match page(&*resource, &mut stream, Get {params, headers}, &mut response_headers).await {
             Ok(content) => {
-                if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
-                    response_headers.insert(String::from("Content-Encoding"), encoding);
+                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &content) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
@@ -141,8 +151,8 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
                 String::from("application/octet-stream")
             };
 
-            if let (Some(encoding), false) = (get_response_encoding(&mut stream, &headers).await, content_empty) {
-                response_headers.insert(String::from("Content-Encoding"), encoding);
+            if let (Some(encoding), false) = (config.get_response_encoding(&headers), content_empty) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
@@ -151,19 +161,22 @@ pub async fn handle_get(mut stream: TcpStream, headers: &HashMap<String, String>
             send_response(&mut stream, 200, Some(response_headers), if !content_empty {Some(content)} else {None}, false).await
         },
         Err(_) => {
-            let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
+            let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await;
 
-            if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
-                response_headers.insert(String::from("Content-Encoding"), encoding);
-                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            if let Ok(c) = content {
+                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                }
+
+                return send_response(&mut stream, 404, Some(response_headers), c, false).await
             }
-
-            send_response(&mut stream, 404, Some(response_headers), content, false).await
+            send_response(&mut stream, 404, Some(response_headers), None, false).await
         }
     }
 }
 
-pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>> {
+pub async fn handle_head(mut stream: TcpStream, config: Config, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>> {
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -172,12 +185,12 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
         resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if !is_access_allowed(&resource, &mut stream).await {
-        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 404, Some(response_headers), content, false).await;
+    if !config.is_access_allowed(&resource, &mut stream).await {
+        let deny_action = config.get_deny_action();
+        return send_response(&mut stream, deny_action, Some(response_headers), None, false).await;
     }
 
-    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource) {
+    if config.dynamic_pages.contains(&resource) {
         match page(&*resource, &mut stream, Head {headers}, &mut response_headers).await {
             Ok(content) => {
                 if let Some(c) = content {
@@ -216,13 +229,12 @@ pub async fn handle_head(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 200, Some(response_headers), None, false).await
         },
         Err(_) => {
-            let content = page("not_found", &mut stream, Head {headers}, &mut response_headers).await?;
-            send_response(&mut stream, 404, Some(response_headers), content, false).await
+            send_response(&mut stream, 404, Some(response_headers), None, false).await
         }
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
+pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -231,9 +243,19 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
     }
 
-    if !is_access_allowed(&resource, &mut stream).await {
-        let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await?;
-        return send_response(&mut stream, 404, Some(response_headers), content, false).await;
+    if !config.is_access_allowed(&resource, &mut stream).await {
+        let deny_action = config.get_deny_action();
+        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Post {data: &None, headers}, &mut response_headers).await;
+
+        if let Ok(c) = content {
+            if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            return send_response(&mut stream, deny_action, Some(response_headers), c, false).await
+        }
+        return send_response(&mut stream, deny_action, Some(response_headers), None, false).await
     }
 
     if !headers.get("Content-Type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
@@ -243,11 +265,11 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
         return send_response(&mut stream, 415, Some(response_headers), None, false).await;
     }
 
-    if config(Some(&mut stream)).await.dynamic_pages.contains(&resource) {
+    if config.dynamic_pages.contains(&resource) {
         match page(&*resource, &mut stream, Post {data, headers}, &mut response_headers).await {
             Ok(content) => {
-                if let (Some(encoding), Some(_)) = (get_response_encoding(&mut stream, &headers).await, &content) {
-                    response_headers.insert(String::from("Content-Encoding"), encoding);
+                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &content) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
@@ -273,8 +295,6 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
 
     match file {
         Ok(mut f) => {
-            // rts_wrapper(&mut f, &mut content, &mut stream).await;
-            // send_response(&mut stream, 204, None, Some(content), false).await
             let mut content = String::new();
             rts_wrapper(&mut f, &mut content, &mut stream).await;
             let content_empty = content.is_empty();
@@ -285,8 +305,8 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
                 String::from("application/octet-stream")
             };
 
-            if let (Some(encoding), false) = (get_response_encoding(&mut stream, &headers).await, content_empty) {
-                response_headers.insert(String::from("Content-Encoding"), encoding);
+            if let (Some(encoding), false) = (config.get_response_encoding(&headers), content_empty) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
@@ -295,13 +315,22 @@ pub async fn handle_post(mut stream: TcpStream, headers: &HashMap<String, String
             send_response(&mut stream, 204, Some(response_headers), if !content_empty {Some(content)} else {None}, false).await
         },
         Err(_) => {
-            let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await?;
-            send_response(&mut stream, 404, Some(response_headers), content, false).await
+            let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await;
+
+            if let Ok(c) = content {
+                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                }
+
+                return send_response(&mut stream, 404, Some(response_headers), c, false).await
+            }
+            send_response(&mut stream, 404, Some(response_headers), None, false).await
         }
     }
 }
 
-pub async fn handle_options(mut stream: TcpStream, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>> {
+pub async fn handle_options(mut stream: TcpStream, _config: Config, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>> {
     let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
     send_response(&mut stream, 204, Some(response_headers), None, false).await

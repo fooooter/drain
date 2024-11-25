@@ -16,17 +16,19 @@ use tokio::*;
 use crate::requests::Request::{Get, Head, Options, Post};
 use crate::requests::*;
 use crate::util::*;
-use crate::config::config;
+use crate::config::Config;
 use crate::error::ServerError;
 
 async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
-    match receive_request(&mut stream).await {
+    let config = Config::new(Some(&mut stream)).await;
+
+    match receive_request(&mut stream, &config).await {
         Ok(request) => {
             match request {
-                Get {resource, params, headers} => handle_get(stream, &headers, resource, &params).await,
-                Head {resource, headers} => handle_head(stream, &headers, resource).await,
-                Post {resource, headers, data} => handle_post(stream, &headers, resource, &data).await,
-                Options {resource, headers} => handle_options(stream, &headers, resource).await,
+                Get {resource, params, headers} => handle_get(stream, config, &headers, resource, &params).await,
+                Head {resource, headers} => handle_head(stream, config, &headers, resource).await,
+                Post {resource, headers, data} => handle_post(stream, config, &headers, resource, &data).await,
+                Options {resource, headers} => handle_options(stream, config, &headers, resource).await,
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
@@ -48,10 +50,11 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn Error>> 
 #[tokio::main]
 
 async fn main() -> io::Result<()> {
-    let document_root = config(None).await.document_root;
+    let config = Config::new(None).await;
+    let document_root = &config.document_root;
 
     #[cfg(target_family = "unix")] {
-        if let Err(e) = chroot(&document_root) {
+        if let Err(e) = chroot(document_root) {
             eprintln!("[main():{}] WARNING: It's strongly advised to run this server with special privileges, so that resources within \
                         the document root can be sandboxed. Continuing without chroot...\n\
                         Additional information:\n{e}\n", line!());
@@ -65,12 +68,12 @@ async fn main() -> io::Result<()> {
         set_current_dir(document_root)?;
     }
 
-    let listener = TcpListener::bind(config(None).await.bind).await?;
+    let listener = TcpListener::bind(config.bind).await?;
     loop {
         let (stream, _) = listener.accept().await?;
         spawn(async move {
             if let Err(e) = handle_connection(stream).await {
-                eprintln!("[main():{}] An error occurred while handling connection:\n{}\n", line!(), e);
+                eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
             }
         });
     }

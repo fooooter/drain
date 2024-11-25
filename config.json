@@ -4,8 +4,11 @@
     "Keep-Alive": "timeout=5, max=100"
   },
   "access_control": {
-    "example1.html": "allow",
-    "example2.html": "deny"
+    "deny_action": 404,
+    "list": {
+      "example1.html": "allow",
+      "example2.html": "deny"
+    }
   },
   "bind": "127.0.0.1:8080",
   "dynamic_pages": [

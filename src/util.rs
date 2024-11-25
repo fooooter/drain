@@ -12,9 +12,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use bytes::BytesMut;
-use glob::glob;
 use crate::pages::internal_server_error::internal_server_error;
-use crate::config::{config, get_config};
+use crate::config::Config;
 use crate::requests::{Request, RequestData};
 use crate::error::*;
 
@@ -94,7 +93,7 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_respon
     response.push_str(&*date_header);
 
     let global_response_headers = if !error {
-        Box::pin(get_config(Some(stream))).await.global_response_headers
+        Box::pin(Config::new(Some(stream))).await.global_response_headers
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };
@@ -178,7 +177,7 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_respon
     Ok(())
 }
 
-pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerError> {
+pub async fn receive_request(stream: &mut TcpStream, config: &Config) -> Result<Request, ServerError> {
     let mut reader = BufReader::new(&mut *stream);
     let mut request_string = String::new();
 
@@ -231,7 +230,7 @@ pub async fn receive_request(stream: &mut TcpStream) -> Result<Request, ServerEr
         let mut data_raw: Vec<u8> = Vec::new();
         let data_processed;
 
-        match (headers.get("Content-Encoding"), get_supported_encodings(stream).await) {
+        match (headers.get("Content-Encoding"), config.get_supported_encodings()) {
             (Some(content_encoding), Some(supported_encodings))
             if supported_encodings.contains(content_encoding) => {
                 if content_encoding.eq("gzip") {
@@ -304,68 +303,9 @@ pub fn get_current_date() -> String {
 pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<String>, LibError> {
     unsafe {
         let page_symbol = String::from(page).replace("/", "::");
-        let lib = Library::new(config(Some(stream)).await.dynamic_pages_library)?;
+        let lib = Library::new(Config::new(Some(stream)).await.dynamic_pages_library)?;
         let p = lib.get::<Page>(page_symbol.as_bytes())?;
 
         Ok(p(request_data, &mut response_headers))
-    }
-}
-
-pub async fn is_access_allowed(resource: &String, mut stream: &mut TcpStream) -> bool {
-    for (k, v) in config(Some(&mut stream)).await.access_control {
-        if let Ok(paths) = glob(&*k) {
-            for entry in paths.filter_map(Result::ok) {
-                if entry.to_string_lossy().eq(resource) {
-                    if v.eq("deny") {
-                        return false;
-                    }
-
-                    if !v.eq("allow") {
-                        eprintln!("[is_access_allowed():{}] A critical server config file is malformed.\n\
-                                    Error information:\n\
-                                    invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
-                                    Attempting to send Internal Server Error page to the client...", line!());
-
-                        if let Err(e) = internal_server_error(stream).await {
-                            eprintln!("[is_access_allowed():{}] FAILED. Error information: {e}", line!());
-                        }
-                        eprintln!("Attempting to close connection...");
-                        if let Err(e) = stream.shutdown().await {
-                            eprintln!("[is_access_allowed():{}] FAILED. Error information:\n{e}", line!());
-                        }
-                        panic!("Unrecoverable error occurred trying to set up connection.");
-                    }
-
-                    return true;
-                }
-            }
-        }
-    }
-    true
-}
-
-pub async fn get_supported_encodings(stream: &mut TcpStream) -> Option<Vec<String>> {
-    let supported_encodings = config(Some(stream)).await.supported_encodings;
-
-    if supported_encodings.is_empty() {
-        None
-    } else {
-        Some(supported_encodings)
-    }
-}
-
-pub async fn get_response_encoding(stream: &mut TcpStream, headers: &HashMap<String, String>) -> Option<String> {
-    let encoding = config(Some(stream)).await.use_encoding;
-
-    if let (Some(content_encoding), Some(supported_encodings)) = (headers.get("Accept-Encoding"), get_supported_encodings(stream).await) {
-        let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
-
-        if accepted_encodings.contains(&encoding) && supported_encodings.contains(&encoding) {
-            Some(encoding)
-        } else {
-            None
-        }
-    } else {
-        None
     }
 }

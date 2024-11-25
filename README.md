@@ -25,7 +25,8 @@ the core and recompiling the server only to change one thing on a page.
 
 ## Configuration
 
-Server can be configured using config.json file. Currently available fields are:
+Server can be configured using config.json file. In order to use a config.json file, you have to specify it in `WEB_SERVER_CONFIG` environment variable. 
+Currently available fields are:
 
 - `global_response_headers` - it's a list of key-value pairs, which stand for default response headers appended to every
 `response_headers` HashMap.

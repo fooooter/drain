@@ -7,9 +7,6 @@ mod error;
 use std::collections::HashMap;
 use std::error::Error;
 
-#[cfg(target_family = "unix")]
-use std::os::unix::fs::chroot;
-
 use std::env::set_current_dir;
 use tokio::net::*;
 use tokio::*;
@@ -53,20 +50,7 @@ async fn main() -> io::Result<()> {
     let config = Config::new(None).await;
     let document_root = &config.document_root;
 
-    #[cfg(target_family = "unix")] {
-        if let Err(e) = chroot(document_root) {
-            eprintln!("[main():{}] WARNING: It's strongly advised to run this server with special privileges, so that resources within \
-                        the document root can be sandboxed. Continuing without chroot...\n\
-                        Additional information:\n{e}\n", line!());
-            set_current_dir(document_root)?;
-        } else {
-            set_current_dir("/")?;
-        }
-    }
-
-    #[cfg(not(target_family = "unix"))] {
-        set_current_dir(document_root)?;
-    }
+    set_current_dir(document_root)?;
 
     let listener = TcpListener::bind(config.bind).await?;
     loop {

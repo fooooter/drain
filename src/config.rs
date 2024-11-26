@@ -36,7 +36,7 @@ impl Config {
                 config_file = File::open(c_f).await;
             }
             Err(e) => {
-                eprintln!("[get_config():{}] A critical server config file wasn't found.\n\
+                eprintln!("[Config::new():{}] A critical server config file wasn't found.\n\
                             Error information:\n\
                             {}", line!(), *e);
                 panic!("Unrecoverable error occurred while trying to set up connection.");
@@ -51,16 +51,16 @@ impl Config {
                     rts_wrapper(&mut f, &mut json_str, s).await;
                 },
                 Err(e1) => {
-                    eprintln!("[get_config():{}] A critical server config file wasn't found.\n\
+                    eprintln!("[Config::new():{}] A critical server config file wasn't found.\n\
                                Error information:\n\
                                {e1}\n\
                                Attempting to send Internal Server Error page to the client...", line!());
                     if let Err(e2) = internal_server_error(s).await {
-                        eprintln!("[get_config():{}] FAILED. Error information: {e2}", line!());
+                        eprintln!("[Config::new():{}] FAILED. Error information: {e2}", line!());
                     }
                     eprintln!("Attempting to close connection...");
                     if let Err(e2) = s.shutdown().await {
-                        eprintln!("[get_config():{}] FAILED. Error information:\n{e2}", line!());
+                        eprintln!("[Config::new():{}] FAILED. Error information:\n{e2}", line!());
                     }
                     panic!("Unrecoverable error occurred while handling connection.");
                 }
@@ -69,16 +69,16 @@ impl Config {
             match serde_json::from_str(&*json_str) {
                 Ok(json) => json,
                 Err(e1) => {
-                    eprintln!("[get_config():{}] A critical server config file is malformed.\n\
+                    eprintln!("[Config::new():{}] A critical server config file is malformed.\n\
                                    Error information:\n\
                                    {e1}\n\
                                    Attempting to send Internal Server Error page to the client...", line!());
                     if let Err(e2) = internal_server_error(s).await {
-                        eprintln!("[get_config():{}] FAILED. Error information: {e2}", line!());
+                        eprintln!("[Config::new():{}] FAILED. Error information: {e2}", line!());
                     }
                     eprintln!("Attempting to close connection...");
                     if let Err(e2) = s.shutdown().await {
-                        eprintln!("[get_config():{}] FAILED. Error information:\n{e2}", line!());
+                        eprintln!("[Config::new():{}] FAILED. Error information:\n{e2}", line!());
                     }
                     panic!("Unrecoverable error occurred while handling connection.");
                 }
@@ -87,14 +87,14 @@ impl Config {
             match config_file {
                 Ok(mut f) => {
                     if let Err(e) = f.read_to_string(&mut json_str).await {
-                        eprintln!("[get_config():{}] An error occurred after an attempt to read from a file: {:?}.\n\
+                        eprintln!("[Config::new():{}] An error occurred after an attempt to read from a file: {:?}.\n\
                                    Error information:\n\
                                    {e}\n", line!(), f);
                         panic!("Unrecoverable error occurred while trying to set up connection.");
                     }
                 },
                 Err(e) => {
-                    eprintln!("[get_config():{}] A critical server config file wasn't found.\n\
+                    eprintln!("[Config::new():{}] A critical server config file wasn't found.\n\
                                 Error information:\n\
                                 {e}", line!());
                     panic!("Unrecoverable error occurred while trying to set up connection.");
@@ -104,7 +104,7 @@ impl Config {
             match serde_json::from_str(&*json_str) {
                 Ok(json) => json,
                 Err(e) => {
-                    eprintln!("[get_config():{}] A critical server config file is malformed.\n\
+                    eprintln!("[Config::new():{}] A critical server config file is malformed.\n\
                                Error information:\n\
                                {e}", line!());
                     panic!("Unrecoverable error occurred while trying to set up connection.");

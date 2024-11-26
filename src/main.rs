@@ -3,10 +3,8 @@ mod util;
 mod pages;
 mod config;
 mod error;
-
 use std::collections::HashMap;
 use std::error::Error;
-
 use std::env::set_current_dir;
 use tokio::net::*;
 use tokio::*;
@@ -29,15 +27,15 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn Error>> 
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-                    send_response(&mut stream, 405, Some(accept_header), None, false).await
+                    send_response(&mut stream, Some(config), 405, Some(accept_header), None).await
                 }
             }
         },
         Err(e) => {
             if let ServerError::DecompressionError(..) = e {
-                send_response(&mut stream, 406, None, None, false).await?;
+                send_response(&mut stream, Some(config), 406, None, None).await?;
             } else {
-                send_response(&mut stream, 400, None, None, false).await?;
+                send_response(&mut stream, Some(config), 400, None, None).await?;
             }
             Err(Box::new(e))
         }
@@ -45,7 +43,6 @@ async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn Error>> 
 }
 
 #[tokio::main]
-
 async fn main() -> io::Result<()> {
     let config = Config::new(None).await;
     let document_root = &config.document_root;
@@ -53,6 +50,7 @@ async fn main() -> io::Result<()> {
     set_current_dir(document_root)?;
 
     let listener = TcpListener::bind(config.bind).await?;
+
     loop {
         let (stream, _) = listener.accept().await?;
         spawn(async move {

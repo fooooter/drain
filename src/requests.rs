@@ -106,9 +106,9 @@ pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            return send_response(&mut stream, deny_action, Some(response_headers), c, false).await
+            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), c).await
         }
-        return send_response(&mut stream, deny_action, Some(response_headers), None, false).await
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
     }
 
     if config.dynamic_pages.contains(&resource) {
@@ -120,10 +120,10 @@ pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap
                 }
 
                 if let Some(_) = &response_headers.get("Location") {
-                    return send_response(&mut stream, 302, Some(response_headers), content, false).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), content).await;
                 }
 
-                return send_response(&mut stream, 200, Some(response_headers), content, false).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), content).await;
             }
             Err(e) => {
                 match e {
@@ -158,7 +158,7 @@ pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap
 
             response_headers.insert(String::from("Content-Type"), type_guess);
 
-            send_response(&mut stream, 200, Some(response_headers), if !content_empty {Some(content)} else {None}, false).await
+            send_response(&mut stream, Some(config), 200, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
         Err(_) => {
             let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await;
@@ -169,9 +169,9 @@ pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, 404, Some(response_headers), c, false).await
+                return send_response(&mut stream, Some(config), 404, Some(response_headers), c).await
             }
-            send_response(&mut stream, 404, Some(response_headers), None, false).await
+            send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
         }
     }
 }
@@ -187,7 +187,7 @@ pub async fn handle_head(mut stream: TcpStream, config: Config, headers: &HashMa
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        return send_response(&mut stream, deny_action, Some(response_headers), None, false).await;
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await;
     }
 
     if config.dynamic_pages.contains(&resource) {
@@ -199,10 +199,10 @@ pub async fn handle_head(mut stream: TcpStream, config: Config, headers: &HashMa
                 }
 
                 if let Some(_) = &response_headers.get("Location") {
-                    return send_response(&mut stream, 302, Some(response_headers), None, false).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
                 }
 
-                return send_response(&mut stream, 200, Some(response_headers), None, false).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await;
             },
             Err(e) => {
                 match e {
@@ -226,10 +226,10 @@ pub async fn handle_head(mut stream: TcpStream, config: Config, headers: &HashMa
             let content_length = content.len().to_string();
             response_headers.insert(String::from("Content-Length"), content_length);
 
-            send_response(&mut stream, 200, Some(response_headers), None, false).await
+            send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
         },
         Err(_) => {
-            send_response(&mut stream, 404, Some(response_headers), None, false).await
+            send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
         }
     }
 }
@@ -253,16 +253,16 @@ pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMa
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            return send_response(&mut stream, deny_action, Some(response_headers), c, false).await
+            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), c).await
         }
-        return send_response(&mut stream, deny_action, Some(response_headers), None, false).await
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
     }
 
     if !headers.get("Content-Type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
         response_headers.insert(String::from("Accept-Post"), String::from("application/x-www-form-urlencoded"));
         response_headers.insert(String::from("Vary"), String::from("Content-Type"));
 
-        return send_response(&mut stream, 415, Some(response_headers), None, false).await;
+        return send_response(&mut stream, Some(config), 415, Some(response_headers), None).await;
     }
 
     if config.dynamic_pages.contains(&resource) {
@@ -274,10 +274,10 @@ pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMa
                 }
 
                 if let Some(_) = &response_headers.get("Location") {
-                    return send_response(&mut stream, 302, Some(response_headers), content, false).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), content).await;
                 }
 
-                return send_response(&mut stream, 200, Some(response_headers), content, false).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), content).await;
             },
             Err(e) => {
                 match e {
@@ -312,7 +312,7 @@ pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMa
 
             response_headers.insert(String::from("Content-Type"), type_guess);
 
-            send_response(&mut stream, 204, Some(response_headers), if !content_empty {Some(content)} else {None}, false).await
+            send_response(&mut stream, Some(config), 204, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
         Err(_) => {
             let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await;
@@ -323,15 +323,15 @@ pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMa
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, 404, Some(response_headers), c, false).await
+                return send_response(&mut stream, Some(config), 404, Some(response_headers), c).await
             }
-            send_response(&mut stream, 404, Some(response_headers), None, false).await
+            send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
         }
     }
 }
 
-pub async fn handle_options(mut stream: TcpStream, _config: Config, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>> {
+pub async fn handle_options(mut stream: TcpStream, config: Config, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>> {
     let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-    send_response(&mut stream, 204, Some(response_headers), None, false).await
+    send_response(&mut stream, Some(config),204, Some(response_headers), None).await
 }

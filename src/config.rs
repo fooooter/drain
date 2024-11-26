@@ -113,10 +113,6 @@ impl Config {
         }
     }
 
-    async fn _get_config(stream: Option<&mut TcpStream>) -> Config {
-        Box::pin(Config::_get_config(stream)).await
-    }
-
     pub async fn is_access_allowed(&self, resource: &String, stream: &mut TcpStream) -> bool {
         for (k, v) in &self.access_control.list {
             if let Ok(paths) = glob(&*k) {

@@ -19,7 +19,7 @@ use crate::error::*;
 
 type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<String>;
 
-pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<String>, error: bool) -> Result<(), Box<dyn Error>> {
+pub async fn send_response(stream: &mut TcpStream, config: Option<Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<String>) -> Result<(), Box<dyn Error>> {
     let mut response = String::new();
     let status_text = match status {
         100 => "Continue",
@@ -92,8 +92,8 @@ pub async fn send_response(stream: &mut TcpStream, status: u16, mut local_respon
     let date_header = format!("Date: {}\r\n", date);
     response.push_str(&*date_header);
 
-    let global_response_headers = if !error {
-        Box::pin(Config::new(Some(stream))).await.global_response_headers
+    let global_response_headers = if let Some(c) = config {
+        c.global_response_headers
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };

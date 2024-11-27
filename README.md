@@ -3,7 +3,6 @@
 [✔]   	OPTIONS<br>
 [✔]   	HEAD<br>
 [✔]   	POST<br>
-[✖]   	Database connection<br>
 [✔]	Auto-detect MIME types<br>
 [✖]		Cookies<br>
 [✖]		Sessions<br>

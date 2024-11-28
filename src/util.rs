@@ -8,9 +8,8 @@ use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use libloading::{Library, Error as LibError};
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 use bytes::BytesMut;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::Config;
@@ -19,7 +18,10 @@ use crate::error::*;
 
 type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<String>;
 
-pub async fn send_response(stream: &mut TcpStream, config: Option<Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<String>) -> Result<(), Box<dyn Error>> {
+pub async fn send_response<T>(stream: &mut T, config: Option<Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<String>) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     let mut response = String::new();
     let status_text = match status {
         100 => "Continue",
@@ -177,7 +179,10 @@ pub async fn send_response(stream: &mut TcpStream, config: Option<Config>, statu
     Ok(())
 }
 
-pub async fn receive_request(stream: &mut TcpStream, config: &Config) -> Result<Request, ServerError> {
+pub async fn receive_request<T>(stream: &mut T, config: &Config) -> Result<Request, ServerError>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     let mut reader = BufReader::new(&mut *stream);
     let mut request_string = String::new();
 
@@ -278,7 +283,10 @@ pub async fn receive_request(stream: &mut TcpStream, config: &Config) -> Result<
     Ok(request)
 }
 
-pub async fn rts_wrapper(f: &mut File, buf: &mut String, stream: &mut TcpStream) {
+pub async fn rts_wrapper<T>(f: &mut File, buf: &mut String, stream: &mut T)
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     if let Err(e1) = f.read_to_string(buf).await {
         eprintln!("[rts_wrapper():{}] An error occurred after an attempt to read from a file: {:?}.\n\
                    Error information:\n{e1}\n\
@@ -300,7 +308,10 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub async fn page<'a>(page: &str, stream: &mut TcpStream, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<String>, LibError> {
+pub async fn page<'a, T>(page: &str, stream: &mut T, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<String>, LibError>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     unsafe {
         let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(Config::new(Some(stream)).await.dynamic_pages_library)?;

@@ -1,9 +1,9 @@
 use std::error::Error;
 use std::collections::HashMap;
 use tokio::fs::*;
-use tokio::net::TcpStream;
 use regex::*;
 use libloading::Error as LibError;
+use tokio::io::{AsyncRead, AsyncWrite};
 use crate::util::*;
 use crate::config::Config;
 use crate::requests::RequestData::{*};
@@ -87,7 +87,10 @@ impl Request {
     }
 }
 
-pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
+pub async fn handle_get<T>(mut stream: T, config: Config, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -176,7 +179,10 @@ pub async fn handle_get(mut stream: TcpStream, config: Config, headers: &HashMap
     }
 }
 
-pub async fn handle_head(mut stream: TcpStream, config: Config, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>> {
+pub async fn handle_head<T>(mut stream: T, config: Config, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -234,7 +240,10 @@ pub async fn handle_head(mut stream: TcpStream, config: Config, headers: &HashMa
     }
 }
 
-pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>> {
+pub async fn handle_post<T>(mut stream: T, config: Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -330,7 +339,10 @@ pub async fn handle_post(mut stream: TcpStream, config: Config, headers: &HashMa
     }
 }
 
-pub async fn handle_options(mut stream: TcpStream, config: Config, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>> {
+pub async fn handle_options<T>(mut stream: T, config: Config, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
     let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
     send_response(&mut stream, Some(config),204, Some(response_headers), None).await

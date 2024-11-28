@@ -3,8 +3,7 @@ use std::env;
 use glob::glob;
 use serde::Deserialize;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::pages::internal_server_error::internal_server_error;
 use crate::util::rts_wrapper;
 
@@ -12,6 +11,14 @@ use crate::util::rts_wrapper;
 pub struct AccessControl {
     pub deny_action: u16,
     pub list: HashMap<String, String>
+}
+
+#[derive(Deserialize)]
+pub struct Https {
+    pub enabled: bool,
+    pub bind: String,
+    pub ssl_private_key_file: String,
+    pub ssl_certificate_file: String
 }
 
 #[derive(Deserialize)]
@@ -23,11 +30,16 @@ pub struct Config {
     pub dynamic_pages_library: String,
     pub supported_encodings: Vec<String>,
     pub use_encoding: String,
-    pub document_root: String
+    pub document_root: String,
+    pub server_root: String,
+    pub https: Https
 }
 
 impl Config {
-    pub async fn new(stream: Option<&mut TcpStream>) -> Self {
+    pub async fn new<T>(stream: Option<&mut T>) -> Self
+    where
+        T: AsyncRead + AsyncWrite + Unpin
+    {
         let config_path = env::var("WEB_SERVER_CONFIG");
         let config_file;
 
@@ -113,7 +125,10 @@ impl Config {
         }
     }
 
-    pub async fn is_access_allowed(&self, resource: &String, stream: &mut TcpStream) -> bool {
+    pub async fn is_access_allowed<T>(&self, resource: &String, stream: &mut T) -> bool
+    where
+        T: AsyncRead + AsyncWrite + Unpin
+    {
         for (k, v) in &self.access_control.list {
             if let Ok(paths) = glob(&*k) {
                 for entry in paths.filter_map(Result::ok) {

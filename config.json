@@ -17,5 +17,12 @@
   "dynamic_pages_library": "libdynamic_pages.so",
   "supported_encodings":  ["gzip", "br"],
   "use_encoding": "br",
-  "document_root": "/www"
+  "document_root": "htdocs",
+  "server_root": "/home/footer/RustroverProjects/web_server_poc",
+  "https": {
+    "enabled": true,
+    "bind": "127.0.0.1:4443",
+    "ssl_private_key_file": "key.pem",
+    "ssl_certificate_file": "cert.pem"
+  }
 }

@@ -109,11 +109,9 @@ async fn main() -> io::Result<()> {
                     if let Err(e1) = Pin::new(&mut stream).accept().await {
                         eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
                                     Error information:\n{e1}\n\
-                                    Attempting to close connection... ", line!());
-                        if let Err(e2) = stream.shutdown().await {
-                            eprintln!("[receive_request():{}] FAILED. Error information:\n{e2}", line!());
-                        }
-                        panic!("Unrecoverable error occurred while establishing connection.");
+                                    Continuing with the regular HTTP...", line!());
+
+                        break;
                     }
 
                     spawn(async move {
@@ -138,7 +136,7 @@ async fn main() -> io::Result<()> {
     loop {
         if let Err(e) = set_current_dir(&config.server_root) {
             eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
-                            Error information:\n{e}\n", line!());
+                        Error information:\n{e}\n", line!());
 
             panic!("Unrecovered error occurred while establishing connection.")
         }

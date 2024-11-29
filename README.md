@@ -35,14 +35,22 @@ Currently available fields are:
   * `deny_action` - it's an unsigned integer corresponding to either 404 or 403 HTTP status codes, which will be returned by the server alongside the 
   page corresponding to each status if access to the resource is denied. For safety reasons, the default is 404, so that a client won't
   know if the resource is unavailable or access to it is denied.
-- `bind` - bind host and port to the server.
+- `bind` - bind host and port to the server (HTTP).
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages.
 - `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
 - `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
-- `document_root` - self-explanatory.
+- `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
+- `server_root` - a directory in which server data are kept, like, for example, key-pairs.
+- `https`:
+  * `enabled` - enable HTTPS
+  * `bind` - bind host and port to the server (HTTPS)
+  * `ssl_private_key_file` - a path to the private key file (a necessary field once HTTPS is enabled).
+  * `ssl_certificate_file` - a path to the certificate file (a necessary field once HTTPS is enabled). It must match the private key.
 
-Changing the `bind` and `document_root` fields requires restarting the server for it to take effect, but the rest is applied dynamically once the config is saved.
+
+
+Changing `bind`, `document_root`, `server_root` and fields inside `https` requires restarting the server for it to take effect, but the rest is applied dynamically once the config is saved.
 
 ## Usage
 

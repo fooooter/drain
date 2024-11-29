@@ -26,9 +26,26 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     ssl_ctx_builder.set_certificate_file(&config.https.ssl_certificate_file, SslFiletype::PEM)?;
     ssl_ctx_builder.check_private_key()?;
 
-    ssl_ctx_builder.set_min_proto_version(Some(SslVersion::TLS1_3))?;
+    ssl_ctx_builder.set_min_proto_version(
+        match &*config.https.min_protocol_version {
+            Some("SSL3") => Some(SslVersion::SSL3),
+            Some("TLS1.3") => Some(SslVersion::TLS1),
+            Some("TLS1") => Some(SslVersion::SSL3),
+            Some("DTLS1") => Some(SslVersion::DTLS1),
+            Some("DTLS1.2") => Some(SslVersion::DTLS1_2),
+            Some("TLS1.1") => Some(SslVersion::TLS1_1),
+            Some("TLS1.2") => Some(SslVersion::TLS1_2),
+            Some(_) | None => None
+        }
+    )?;
+
+    if let Some(SslVersion::TLS1_3) = ssl_ctx_builder.min_proto_version() {
+        ssl_ctx_builder.set_ciphersuites(&config.https.cipher_list)?;
+    } else {
+        ssl_ctx_builder.set_cipher_list(&config.https.cipher_list)?;
+    }
+
     ssl_ctx_builder.set_alpn_protos(b"\x08http/1.1")?;
-    ssl_ctx_builder.set_ciphersuites("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")?;
     ssl_ctx_builder.set_verify(SslVerifyMode::NONE);
 
     let ssl_ctx = ssl_ctx_builder.build();
@@ -72,9 +89,10 @@ where
 async fn main() -> io::Result<()> {
     let config = Config::new::<TcpStream>(None).await;
     let https_enabled = (&config.https.enabled).clone();
+    let bind_host = &config.bind_host;
 
     if https_enabled {
-        let listener_https = TcpListener::bind(&config.https.bind).await?;
+        let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.https.bind_port)).await?;
         loop {
             if let Err(e) = set_current_dir(&config.server_root) {
                 eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
@@ -86,7 +104,7 @@ async fn main() -> io::Result<()> {
             let ssl = configure_ssl(&config);
             match ssl {
                 Ok(ssl) => {
-                    let (stream, _) = listener_https.accept().await?;
+                    let (stream, _) = listener.accept().await?;
                     let mut stream = SslStream::new(ssl, stream)?;
                     if let Err(e1) = Pin::new(&mut stream).accept().await {
                         eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
@@ -116,7 +134,7 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    let listener_http = TcpListener::bind(&config.bind).await?;
+    let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.bind_port)).await?;
     loop {
         if let Err(e) = set_current_dir(&config.server_root) {
             eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
@@ -125,7 +143,7 @@ async fn main() -> io::Result<()> {
             panic!("Unrecovered error occurred while establishing connection.")
         }
 
-        let (stream, _) = listener_http.accept().await?;
+        let (stream, _) = listener.accept().await?;
 
         spawn(async move {
             if let Err(e) = handle_connection(stream).await {

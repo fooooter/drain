@@ -10,18 +10,21 @@
       "example2.html": "deny"
     }
   },
-  "bind": "127.0.0.1:8080",
+  "bind_host": "127.0.0.1",
+  "bind_port": "8080",
   "dynamic_pages": [
     "index"
   ],
   "dynamic_pages_library": "libdynamic_pages.so",
   "supported_encodings":  ["gzip", "br"],
   "use_encoding": "br",
-  "document_root": "htdocs",
-  "server_root": "/home/footer/RustroverProjects/web_server_poc",
+  "document_root": "/www",
+  "server_root": "/usr/local/etc/web_server",
   "https": {
     "enabled": true,
-    "bind": "127.0.0.1:4443",
+    "bind_port": "4443",
+    "min_protocol_version": "TLS1.3",
+    "cipher_list": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
     "ssl_private_key_file": "key.pem",
     "ssl_certificate_file": "cert.pem"
   }

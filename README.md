@@ -35,7 +35,8 @@ Currently available fields are:
   * `deny_action` - it's an unsigned integer corresponding to either 404 or 403 HTTP status codes, which will be returned by the server alongside the 
   page corresponding to each status if access to the resource is denied. For safety reasons, the default is 404, so that a client won't
   know if the resource is unavailable or access to it is denied.
-- `bind` - bind host and port to the server (HTTP).
+- `bind_host` - bind host to the server.
+- `bind_port` - bind port to the server (HTTP).
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages.
 - `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
@@ -44,7 +45,27 @@ Currently available fields are:
 - `server_root` - a directory in which server data are kept, like, for example, key-pairs.
 - `https`:
   * `enabled` - enable HTTPS
-  * `bind` - bind host and port to the server (HTTPS)
+  * `bind_port` - bind port to the server (HTTPS)
+  * `min_protocol_version` - a minimum version of TLS/DTLS/SSL the server accepts. Must be one of the following: 
+    + SSL3
+    + TLS1.3
+    + TLS1
+    + DTLS1
+    + DTLS1.2
+    + TLS1.1
+    + TLS1.2
+    
+    Instead, it will be set to accept every protocol.
+  * `cipher_list` - a list of ciphers the server will use. Must be one of the following:
+    + TLS_AES_128_GCM_SHA256
+    + TLS_AES_256_GCM_SHA384
+    + TLS_CHACHA20_POLY1305_SHA256
+    + TLS_AES_128_CCM_SHA256
+    + TLS_AES_128_CCM_8_SHA256
+    + TLS_SHA384_SHA384 - integrity-only
+    + TLS_SHA256_SHA256 - integrity-only
+  
+    Instead, the default configuration will be used: `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256`
   * `ssl_private_key_file` - a path to the private key file (a necessary field once HTTPS is enabled).
   * `ssl_certificate_file` - a path to the certificate file (a necessary field once HTTPS is enabled). It must match the private key.
 

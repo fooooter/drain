@@ -16,7 +16,9 @@ pub struct AccessControl {
 #[derive(Deserialize)]
 pub struct Https {
     pub enabled: bool,
-    pub bind: String,
+    pub bind_port: String,
+    pub min_protocol_version: Option<String>,
+    pub cipher_list: String,
     pub ssl_private_key_file: String,
     pub ssl_certificate_file: String
 }
@@ -25,7 +27,8 @@ pub struct Https {
 pub struct Config {
     pub global_response_headers: HashMap<String, String>,
     pub access_control: AccessControl,
-    pub bind: String,
+    pub bind_host: String,
+    pub bind_port: String,
     pub dynamic_pages: Vec<String>,
     pub dynamic_pages_library: String,
     pub supported_encodings: Vec<String>,

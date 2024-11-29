@@ -66,8 +66,8 @@ Currently available fields are:
     + TLS_SHA256_SHA256 - integrity-only
   
     Instead, the default configuration will be used: `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256`
-  * `ssl_private_key_file` - a path to the private key file (a necessary field once HTTPS is enabled).
-  * `ssl_certificate_file` - a path to the certificate file (a necessary field once HTTPS is enabled). It must match the private key.
+  * `ssl_private_key_file` - a path to the private key file in PEM format (a necessary field once HTTPS is enabled).
+  * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled). It must match the private key.
 
 
 

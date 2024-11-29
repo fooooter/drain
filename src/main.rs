@@ -11,7 +11,7 @@ use openssl::error::ErrorStack;
 use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use tokio::net::*;
 use tokio::*;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_openssl::SslStream;
 use crate::requests::Request::{Get, Head, Options, Post};
 use crate::requests::*;
@@ -73,30 +73,42 @@ async fn main() -> io::Result<()> {
     let config = Config::new::<TcpStream>(None).await;
     let https_enabled = (&config.https.enabled).clone();
 
-    let listener_http = TcpListener::bind(&config.bind).await?;
-
     if https_enabled {
         let listener_https = TcpListener::bind(&config.https.bind).await?;
-
         loop {
-            set_current_dir(&config.server_root)?;
+            if let Err(e) = set_current_dir(&config.server_root) {
+                eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
+                            Error information:\n{e}\n", line!());
+
+                panic!("Unrecovered error occurred while establishing connection.")
+            }
+
             let ssl = configure_ssl(&config);
             match ssl {
                 Ok(ssl) => {
                     let (stream, _) = listener_https.accept().await?;
                     let mut stream = SslStream::new(ssl, stream)?;
-                    Pin::new(&mut stream).accept().await.unwrap();
+                    if let Err(e1) = Pin::new(&mut stream).accept().await {
+                        eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
+                                    Error information:\n{e1}\n\
+                                    Attempting to close connection... ", line!());
+                        if let Err(e2) = stream.shutdown().await {
+                            eprintln!("[receive_request():{}] FAILED. Error information:\n{e2}", line!());
+                        }
+                        panic!("Unrecoverable error occurred while establishing connection.");
+                    }
 
                     spawn(async move {
                         if let Err(e) = handle_connection(stream).await {
-                            eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                            eprintln!("[main():{}] An error occurred while handling connection:\
+                            \n{e}\n", line!());
                         }
                     });
                 },
                 Err(e) => {
                     eprintln!("[main():{}] An error occurred while configuring SSL for a secure connection.\n\
-                            Error information:\n{e}\n\
-                            Continuing with the regular HTTP.", line!());
+                                Error information:\n{e}\n\
+                                Continuing with the regular HTTP.", line!());
 
                     break;
                 }
@@ -104,7 +116,15 @@ async fn main() -> io::Result<()> {
         }
     }
 
+    let listener_http = TcpListener::bind(&config.bind).await?;
     loop {
+        if let Err(e) = set_current_dir(&config.server_root) {
+            eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
+                            Error information:\n{e}\n", line!());
+
+            panic!("Unrecovered error occurred while establishing connection.")
+        }
+
         let (stream, _) = listener_http.accept().await?;
 
         spawn(async move {

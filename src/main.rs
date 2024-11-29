@@ -27,14 +27,14 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     ssl_ctx_builder.check_private_key()?;
 
     ssl_ctx_builder.set_min_proto_version(
-        match &*config.https.min_protocol_version {
-            Some("SSL3") => Some(SslVersion::SSL3),
-            Some("TLS1.3") => Some(SslVersion::TLS1),
-            Some("TLS1") => Some(SslVersion::SSL3),
-            Some("DTLS1") => Some(SslVersion::DTLS1),
-            Some("DTLS1.2") => Some(SslVersion::DTLS1_2),
-            Some("TLS1.1") => Some(SslVersion::TLS1_1),
-            Some("TLS1.2") => Some(SslVersion::TLS1_2),
+        match &config.https.min_protocol_version {
+            Some(min_proto_version) if min_proto_version.eq("SSL3") => Some(SslVersion::SSL3),
+            Some(min_proto_version) if min_proto_version.eq("TLS1.3") => Some(SslVersion::TLS1_3),
+            Some(min_proto_version) if min_proto_version.eq("TLS1") => Some(SslVersion::TLS1),
+            Some(min_proto_version) if min_proto_version.eq("DTLS1") => Some(SslVersion::DTLS1),
+            Some(min_proto_version) if min_proto_version.eq("DTLS1.2") => Some(SslVersion::DTLS1_2),
+            Some(min_proto_version) if min_proto_version.eq("TLS1.1") => Some(SslVersion::TLS1_1),
+            Some(min_proto_version) if min_proto_version.eq("TLS1.2") => Some(SslVersion::TLS1_2),
             Some(_) | None => None
         }
     )?;

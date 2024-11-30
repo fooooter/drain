@@ -313,8 +313,10 @@ where
     T: AsyncRead + AsyncWrite + Unpin
 {
     unsafe {
+        let config = Config::new(Some(stream)).await;
+
         let page_symbol = String::from(page).replace("/", "::");
-        let lib = Library::new(Config::new(Some(stream)).await.dynamic_pages_library)?;
+        let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;
         let p = lib.get::<Page>(page_symbol.as_bytes())?;
 
         Ok(p(request_data, &mut response_headers))

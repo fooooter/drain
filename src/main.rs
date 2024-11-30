@@ -5,7 +5,6 @@ mod config;
 mod error;
 use std::collections::HashMap;
 use std::error::Error;
-use std::env::set_current_dir;
 use std::pin::Pin;
 use openssl::error::ErrorStack;
 use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
@@ -20,10 +19,11 @@ use crate::config::Config;
 use crate::error::ServerError;
 
 fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
+    let server_root = &config.server_root;
     let mut ssl_ctx_builder = SslContext::builder(SslMethod::tls())?;
 
-    ssl_ctx_builder.set_private_key_file(&config.https.ssl_private_key_file, SslFiletype::PEM)?;
-    ssl_ctx_builder.set_certificate_file(&config.https.ssl_certificate_file, SslFiletype::PEM)?;
+    ssl_ctx_builder.set_private_key_file(format!("{}/{}", server_root, &config.https.ssl_private_key_file), SslFiletype::PEM)?;
+    ssl_ctx_builder.set_certificate_file(format!("{}/{}", server_root, &config.https.ssl_certificate_file), SslFiletype::PEM)?;
     ssl_ctx_builder.check_private_key()?;
 
     ssl_ctx_builder.set_min_proto_version(
@@ -57,8 +57,6 @@ where
     T: AsyncRead + AsyncWrite + Unpin
 {
     let config = Config::new(Some(&mut stream)).await;
-    let document_root = &config.document_root;
-    set_current_dir(document_root)?;
 
     match receive_request(&mut stream, &config).await {
         Ok(request) => {
@@ -94,13 +92,6 @@ async fn main() -> io::Result<()> {
     if https_enabled {
         let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.https.bind_port)).await?;
         loop {
-            if let Err(e) = set_current_dir(&config.server_root) {
-                eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
-                            Error information:\n{e}\n", line!());
-
-                panic!("Unrecovered error occurred while trying to set up a connection.");
-            }
-
             let ssl = configure_ssl(&config);
             match ssl {
                 Ok(ssl) => {
@@ -134,13 +125,6 @@ async fn main() -> io::Result<()> {
 
     let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.bind_port)).await?;
     loop {
-        if let Err(e) = set_current_dir(&config.server_root) {
-            eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
-                        Error information:\n{e}\n", line!());
-
-            panic!("Unrecovered error occurred while trying to set up a connection.");
-        }
-
         let (stream, _) = listener.accept().await?;
 
         spawn(async move {

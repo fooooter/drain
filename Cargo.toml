@@ -1,6 +1,6 @@
 [package]
 name = "web_server"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
 repository = "https://github.com/fooooter/web_server_poc"
 license = "LGPL-3.0-or-later"

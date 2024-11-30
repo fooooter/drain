@@ -91,12 +91,17 @@ pub async fn handle_get<T>(mut stream: T, config: Config, headers: &HashMap<Stri
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    let document_root = &config.document_root;
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
     if resource.is_empty() {
-        resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+        resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
+            format!("{document_root}/index.html")
+        } else {
+            String::from("index")
+        };
     }
 
     if !config.is_access_allowed(&resource, &mut stream).await {
@@ -140,7 +145,7 @@ where
         }
     }
 
-    let file = File::open(&resource).await;
+    let file = File::open(format!("{document_root}/{}", &resource)).await;
 
     match file {
         Ok(mut f) => {
@@ -183,12 +188,17 @@ pub async fn handle_head<T>(mut stream: T, config: Config, headers: &HashMap<Str
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    let document_root = &config.document_root;
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
     if resource.is_empty() {
-        resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+        resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
+            format!("{document_root}/index.html")
+        } else {
+            String::from("index")
+        };
     }
 
     if !config.is_access_allowed(&resource, &mut stream).await {
@@ -222,7 +232,7 @@ where
         }
     }
 
-    let file = File::open(resource).await;
+    let file = File::open(format!("{document_root}/{}", &resource)).await;
 
     match file {
         Ok(mut f) => {
@@ -244,12 +254,17 @@ pub async fn handle_post<T>(mut stream: T, config: Config, headers: &HashMap<Str
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    let document_root = &config.document_root;
     resource.remove(0);
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
     if resource.is_empty() {
-        resource = if let Ok(_) = File::open("index.html").await {String::from("index.html")} else {String::from("index")};
+        resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
+            format!("{document_root}/index.html")
+        } else {
+            String::from("index")
+        };
     }
 
     if !config.is_access_allowed(&resource, &mut stream).await {
@@ -300,7 +315,7 @@ where
         }
     }
 
-    let file = File::open(&resource).await;
+    let file = File::open(format!("{document_root}/{}", &resource)).await;
 
     match file {
         Ok(mut f) => {

@@ -1,4 +1,4 @@
-## Progress done so far (and TODO in the future):
+## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
 [✔]   	OPTIONS<br>
 [✔]   	HEAD<br>

@@ -39,7 +39,7 @@ Currently available fields are:
   page corresponding to each status if access to the resource is denied. For safety reasons, the default is 404, so that a client won't
   know if the resource is unavailable or access to it is denied.
 - `bind_host` - bind host to the server.
-- `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or other privileged user.
+- `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or other another privileged user.
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages, which must be relative to the `server_root`.
 - `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
@@ -48,7 +48,7 @@ Currently available fields are:
 - `server_root` - a directory in which server data are kept, like, for example, key-pairs.
 - `https`:
   * `enabled` - enable HTTPS
-  * `bind_port` - bind port to the server (HTTPS). If you want to use 443, be sure to start the server as root or other privileged user.
+  * `bind_port` - bind port to the server (HTTPS). If you want to use 443, be sure to start the server as root or another privileged user.
   * `min_protocol_version` - a minimum version of TLS/DTLS/SSL the server accepts. Must be one of the following: 
     + SSL3
     + TLS1.3
@@ -143,6 +143,6 @@ changing content type to JSON, for example.
 
 ### Redirections
 
-Redirections are done once you append the `Location` header to `response_headers` in a dynamic page. 
+Redirections are done once you append the `Location` or `location` header to `response_headers` in a dynamic page. 
 It's up to you, whether a page should return content in redirection response or not, but it's preferred to 
-return `None` after specifying `Location`. The status code is set by default to 302, but this will be changeable very soon.
+return `None` after specifying `Location` (or `location`). The status code is set by default to 302, but this will be changeable very soon.

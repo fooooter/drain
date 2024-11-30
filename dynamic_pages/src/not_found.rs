@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use crate::RequestData;
 
 #[export_name = "not_found"]
-pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<String, String>) -> Option<String> {
-    let content = String::from(r#"
+pub fn not_found(request_data: RequestData, mut response_headers: &mut HashMap<String, String>) -> Option<Vec<u8>> {
+    let content: Vec<u8> = Vec::from(r#"
     <!DOCTYPE html>
     <html lang="en">
         <head>

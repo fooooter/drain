@@ -46,7 +46,7 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     }
 
     ssl_ctx_builder.set_alpn_protos(b"\x08http/1.1")?;
-    ssl_ctx_builder.set_verify(SslVerifyMode::NONE);
+    ssl_ctx_builder.set_verify(SslVerifyMode::PEER);
 
     let ssl_ctx = ssl_ctx_builder.build();
     Ssl::new(&ssl_ctx)

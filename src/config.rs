@@ -5,12 +5,20 @@ use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::pages::internal_server_error::internal_server_error;
-use crate::util::rts_wrapper;
+use crate::util::rte_wrapper;
 
 #[derive(Deserialize)]
 pub struct AccessControl {
     pub deny_action: u16,
     pub list: HashMap<String, String>
+}
+
+#[derive(Deserialize)]
+pub struct Encoding {
+    pub enabled: bool,
+    pub supported_encodings: Vec<String>,
+    pub use_encoding: String,
+    pub encoding_applicable_mime_types: Vec<String>
 }
 
 #[derive(Deserialize)]
@@ -31,8 +39,7 @@ pub struct Config {
     pub bind_port: String,
     pub dynamic_pages: Vec<String>,
     pub dynamic_pages_library: String,
-    pub supported_encodings: Vec<String>,
-    pub use_encoding: String,
+    pub encoding: Encoding,
     pub document_root: String,
     pub server_root: String,
     pub https: Https
@@ -58,12 +65,12 @@ impl Config {
             }
         }
 
-        let mut json_str: String = String::new();
+        let mut json: Vec<u8> = Vec::new();
 
         if let Some(s) = stream {
             match config_file {
                 Ok(mut f) => {
-                    rts_wrapper(&mut f, &mut json_str, s).await;
+                    rte_wrapper(&mut f, &mut json, s).await;
                 },
                 Err(e1) => {
                     eprintln!("[Config::new():{}] A critical server config file wasn't found.\n\
@@ -81,7 +88,7 @@ impl Config {
                 }
             }
 
-            match serde_json::from_str(&*json_str) {
+            match serde_json::from_slice(&*json) {
                 Ok(json) => json,
                 Err(e1) => {
                     eprintln!("[Config::new():{}] A critical server config file is malformed.\n\
@@ -101,7 +108,7 @@ impl Config {
         } else {
             match config_file {
                 Ok(mut f) => {
-                    if let Err(e) = f.read_to_string(&mut json_str).await {
+                    if let Err(e) = f.read_to_end(&mut json).await {
                         eprintln!("[Config::new():{}] An error occurred after an attempt to read from a file: {:?}.\n\
                                    Error information:\n\
                                    {e}\n", line!(), f);
@@ -116,7 +123,7 @@ impl Config {
                 }
             }
 
-            match serde_json::from_str(&*json_str) {
+            match serde_json::from_slice(&*json) {
                 Ok(json) => json,
                 Err(e) => {
                     eprintln!("[Config::new():{}] A critical server config file is malformed.\n\
@@ -165,7 +172,7 @@ impl Config {
     }
 
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {
-        let supported_encodings = &self.supported_encodings;
+        let supported_encodings = &self.encoding.supported_encodings;
 
         if supported_encodings.is_empty() {
             return None
@@ -174,7 +181,7 @@ impl Config {
     }
 
     pub fn get_response_encoding(&self, headers: &HashMap<String, String>) -> Option<&String> {
-        let encoding = &self.use_encoding;
+        let encoding = &self.encoding.use_encoding;
 
         if let (Some(content_encoding), Some(supported_encodings)) = (headers.get("accept-encoding"), &self.get_supported_encodings()) {
             let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();

@@ -109,7 +109,7 @@ where
         let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Get {params: &None, headers}, &mut response_headers).await;
 
         if let Ok(c) = content {
-            if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+            if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
@@ -122,7 +122,7 @@ where
     if config.dynamic_pages.contains(&resource) {
         match page(&*resource, &mut stream, Get {params, headers}, &mut response_headers).await {
             Ok(content) => {
-                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &content) {
+                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &content) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
@@ -149,22 +149,27 @@ where
 
     match file {
         Ok(mut f) => {
-            let mut content = String::new();
-            rts_wrapper(&mut f, &mut content, &mut stream).await;
+            let mut content: Vec<u8> = Vec::new();
+            rte_wrapper(&mut f, &mut content, &mut stream).await;
             let content_empty = content.is_empty();
 
-            let type_guess = if let Some(guess) = mime_guess::from_path(resource).first() {
-                guess.to_string()
+            let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
+                (guess.to_string(), guess.type_().to_string())
             } else {
-                String::from("application/octet-stream")
+                (String::from("application/octet-stream"), String::from("application"))
             };
 
-            if let (Some(encoding), false) = (config.get_response_encoding(&headers), content_empty) {
+            if let (true, Some(encoding), false, true) = (&config.encoding.enabled,
+                                                    config.get_response_encoding(&headers),
+                                                    content_empty,
+                                                    general_type.eq("text") ||
+                                                    config.encoding.encoding_applicable_mime_types.contains(&guess))
+            {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            response_headers.insert(String::from("Content-Type"), type_guess);
+            response_headers.insert(String::from("Content-Type"), guess);
 
             send_response(&mut stream, Some(config), 200, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
@@ -236,8 +241,8 @@ where
 
     match file {
         Ok(mut f) => {
-            let mut content = String::new();
-            rts_wrapper(&mut f, &mut content, &mut stream).await;
+            let mut content: Vec<u8> = Vec::new();
+            rte_wrapper(&mut f, &mut content, &mut stream).await;
 
             let content_length = content.len().to_string();
             response_headers.insert(String::from("Content-Length"), content_length);
@@ -272,7 +277,7 @@ where
         let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Post {data: &None, headers}, &mut response_headers).await;
 
         if let Ok(c) = content {
-            if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+            if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
@@ -292,7 +297,7 @@ where
     if config.dynamic_pages.contains(&resource) {
         match page(&*resource, &mut stream, Post {data, headers}, &mut response_headers).await {
             Ok(content) => {
-                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &content) {
+                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &content) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
@@ -319,22 +324,27 @@ where
 
     match file {
         Ok(mut f) => {
-            let mut content = String::new();
-            rts_wrapper(&mut f, &mut content, &mut stream).await;
+            let mut content: Vec<u8> = Vec::new();
+            rte_wrapper(&mut f, &mut content, &mut stream).await;
             let content_empty = content.is_empty();
 
-            let type_guess = if let Some(guess) = mime_guess::from_path(resource).first() {
-                guess.to_string()
+            let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
+                (guess.to_string(), guess.type_().to_string())
             } else {
-                String::from("application/octet-stream")
+                (String::from("application/octet-stream"), String::from("application"))
             };
 
-            if let (Some(encoding), false) = (config.get_response_encoding(&headers), content_empty) {
+            if let (true, Some(encoding), false, true) = (&config.encoding.enabled,
+                                                          config.get_response_encoding(&headers),
+                                                          content_empty,
+                                                          general_type.eq("text") ||
+                                                          config.encoding.encoding_applicable_mime_types.contains(&guess))
+            {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            response_headers.insert(String::from("Content-Type"), type_guess);
+            response_headers.insert(String::from("Content-Type"), guess);
 
             send_response(&mut stream, Some(config), 204, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },

@@ -17,8 +17,20 @@
     "index"
   ],
   "dynamic_pages_library": "libdynamic_pages.so",
-  "supported_encodings":  ["gzip", "br"],
-  "use_encoding": "br",
+  "encoding": {
+    "enabled": true,
+    "supported_encodings":  ["gzip", "br"],
+    "use_encoding": "br",
+    "encoding_applicable_mime_types": [
+      "application/json",
+      "application/ld+json",
+      "image/svg+xml",
+      "application/xhtml+xml",
+      "application/xml",
+      "application/x-csh",
+      "application/x-sh"
+    ]
+  },
   "document_root": "/www",
   "server_root": "/usr/local/etc/web_server",
   "https": {

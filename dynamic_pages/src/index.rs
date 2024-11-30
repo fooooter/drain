@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use crate::RequestData::{self, *};
 
 #[export_name = "index"]
-pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<String> {
-    let content = String::from(format!(r#"
+pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<Vec<u8>> {
+    let content: Vec<u8> = Vec::from(format!(r#"
     <!DOCTYPE html>
         <head>
             <meta charset="utf-8">

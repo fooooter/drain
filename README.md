@@ -42,12 +42,14 @@ Currently available fields are:
 - `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or other another privileged user.
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages, which must be relative to the `server_root`.
-- `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
-- `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
+- `encoding`:
+  * `enabled` - enable response body encoding.
+  * `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
+  * `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
 - `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
 - `server_root` - a directory in which server data are kept, like, for example, key-pairs.
 - `https`:
-  * `enabled` - enable HTTPS
+  * `enabled` - enable HTTPS.
   * `bind_port` - bind port to the server (HTTPS). If you want to use 443, be sure to start the server as root or another privileged user.
   * `min_protocol_version` - a minimum version of TLS/DTLS/SSL the server accepts. Must be one of the following: 
     + SSL3

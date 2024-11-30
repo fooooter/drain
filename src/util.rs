@@ -16,9 +16,9 @@ use crate::config::Config;
 use crate::requests::{Request, RequestData};
 use crate::error::*;
 
-type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<String>;
+type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<Vec<u8>>;
 
-pub async fn send_response<T>(stream: &mut T, config: Option<Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<String>) -> Result<(), Box<dyn Error>>
+pub async fn send_response<T>(stream: &mut T, config: Option<Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<Vec<u8>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -110,7 +110,7 @@ where
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let mut content_trim: &[u8] = c.trim().as_bytes();
+            let mut content_trim = &*Vec::from(c.trim_ascii());
             let mut content_prepared: Vec<u8> = Vec::new();
 
             if let Some(encoding) = h.get("Content-Encoding") {
@@ -118,34 +118,40 @@ where
                     if let Err(e) = GzEncoder::new(content_trim, Compression::default()).read_to_end(&mut content_prepared) {
                         eprintln!("[send_response():{}] An error occurred while compressing the content of a response using GZIP:\n{e}\n\
                                     Attempting to send uncompressed data...", line!());
-                        content_prepared = c.trim().as_bytes().to_vec();
+                        content_prepared = Vec::from(c.trim_ascii());
                     }
                 } else if encoding.eq("br") {
                     if let Err(e) = BrotliCompress(&mut content_trim, &mut content_prepared, &BrotliEncoderParams::default()) {
                         eprintln!("[send_response():{}] An error occurred while compressing the content of a response using GZIP:\n{e}\n\
                                     Attempting to send uncompressed data...", line!());
-                        content_prepared = c.trim().as_bytes().to_vec();
+                        content_prepared = Vec::from(c.trim_ascii());
                     }
                 } else {
-                    content_prepared = c.trim().as_bytes().to_vec();
+                    content_prepared = Vec::from(c.trim_ascii());
                 }
             } else {
-                content_prepared = c.trim().as_bytes().to_vec();
+                content_prepared = Vec::from(c.trim_ascii());
             }
 
             let content_length_header = format!("Content-Length: {}\r\n\r\n", content_prepared.len());
             response.push_str(&*format!("{content_length_header}"));
 
-            response_bytes = response.as_bytes().to_vec();
+            response_bytes = Vec::from(response);
 
             for x in content_prepared {
                 response_bytes.push(x);
             }
         },
         (None, Some(c)) => {
-            let content_length_header = format!("Content-Length: {}\r\n\r\n", c.len());
-            response.push_str(&*format!("{content_length_header}{}", c.trim_start()));
-            response_bytes = response.as_bytes().to_vec();
+            let content_trim = c.trim_ascii_start();
+            let content_length_header = format!("Content-Length: {}\r\n\r\n", content_trim.len());
+            response.push_str(&*format!("{content_length_header}"));
+
+            response_bytes = Vec::from(response);
+
+            for x in content_trim {
+                response_bytes.push(*x);
+            }
         },
         (Some(ref mut h), None) => {
             h.extend(global_response_headers);
@@ -154,11 +160,11 @@ where
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
             response.push_str("\r\n");
-            response_bytes = response.as_bytes().to_vec();
+            response_bytes = Vec::from(response);
         },
         (None, None) => {
             response.push_str("\r\n");
-            response_bytes = response.as_bytes().to_vec();
+            response_bytes = Vec::from(response);
         }
     }
 
@@ -283,20 +289,20 @@ where
     Ok(request)
 }
 
-pub async fn rts_wrapper<T>(f: &mut File, buf: &mut String, stream: &mut T)
+pub async fn rte_wrapper<T>(f: &mut File, buf: &mut Vec<u8>, stream: &mut T)
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
-    if let Err(e1) = f.read_to_string(buf).await {
-        eprintln!("[rts_wrapper():{}] An error occurred after an attempt to read from a file: {:?}.\n\
+    if let Err(e1) = f.read_to_end(buf).await {
+        eprintln!("[rte_wrapper():{}] An error occurred after an attempt to read from a file: {:?}.\n\
                    Error information:\n{e1}\n\
                    Attempting to send Internal Server Error page to the client...", line!(), f);
         if let Err(e2) = internal_server_error(stream).await {
-            eprintln!("[rts_wrapper():{}] FAILED. Error information: {e2}", line!());
+            eprintln!("[rte_wrapper():{}] FAILED. Error information: {e2}", line!());
         }
         eprintln!("Attempting to close connection...");
         if let Err(e2) = stream.shutdown().await {
-            eprintln!("[rts_wrapper():{}] FAILED. Error information:\n{e2}", line!());
+            eprintln!("[rte_wrapper():{}] FAILED. Error information:\n{e2}", line!());
         }
         panic!("Unrecoverable error occurred while handling connection.");
     }
@@ -308,7 +314,7 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub async fn page<'a, T>(page: &str, stream: &mut T, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<String>, LibError>
+pub async fn page<'a, T>(page: &str, stream: &mut T, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<Vec<u8>>, LibError>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {

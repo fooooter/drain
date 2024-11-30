@@ -46,6 +46,7 @@ Currently available fields are:
   * `enabled` - enable response body encoding.
   * `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
   * `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
+  * `encoding_applicable_mime_types` - a list of media types to which encoding should be applied. It's best to leave this setting as is.
 - `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
 - `server_root` - a directory in which server data are kept, like, for example, key-pairs.
 - `https`:

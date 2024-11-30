@@ -98,7 +98,7 @@ async fn main() -> io::Result<()> {
                 eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
                             Error information:\n{e}\n", line!());
 
-                panic!("Unrecovered error occurred while establishing connection.")
+                panic!("Unrecovered error occurred while trying to set up a connection.");
             }
 
             let ssl = configure_ssl(&config);
@@ -138,7 +138,7 @@ async fn main() -> io::Result<()> {
             eprintln!("[main():{}] Failed to set the current working directory to the server root specified in config.\n\
                         Error information:\n{e}\n", line!());
 
-            panic!("Unrecovered error occurred while establishing connection.")
+            panic!("Unrecovered error occurred while trying to set up a connection.");
         }
 
         let (stream, _) = listener.accept().await?;

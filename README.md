@@ -9,8 +9,11 @@
 [✔]	Config (now JSON)<br>
 [✔]     Compression (GZIP and Brotli for now)<br>
 [✔]     Decompression (GZIP and Brotli for now)<br>
-[✔]		TLS<br>
+[✔]     TLS<br>
 [✔]	Redirections<br>
+[✖]     HTTP/2<br>
+[✖]     HTTP/3<br>
+
 
 ## This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
 

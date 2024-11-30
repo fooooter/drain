@@ -160,10 +160,10 @@ where
             };
 
             if let (true, Some(encoding), false, true) = (&config.encoding.enabled,
-                                                    config.get_response_encoding(&headers),
-                                                    content_empty,
-                                                    general_type.eq("text") ||
-                                                    config.encoding.encoding_applicable_mime_types.contains(&guess))
+                                                                config.get_response_encoding(&headers),
+                                                                content_empty,
+                                                                general_type.eq("text") ||
+                                                                config.encoding.encoding_applicable_mime_types.contains(&guess))
             {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
@@ -177,7 +177,7 @@ where
             let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await;
 
             if let Ok(c) = content {
-                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
@@ -335,10 +335,10 @@ where
             };
 
             if let (true, Some(encoding), false, true) = (&config.encoding.enabled,
-                                                          config.get_response_encoding(&headers),
-                                                          content_empty,
-                                                          general_type.eq("text") ||
-                                                          config.encoding.encoding_applicable_mime_types.contains(&guess))
+                                                                  config.get_response_encoding(&headers),
+                                                                  content_empty,
+                                                                  general_type.eq("text") ||
+                                                                  config.encoding.encoding_applicable_mime_types.contains(&guess))
             {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
@@ -352,7 +352,7 @@ where
             let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await;
 
             if let Ok(c) = content {
-                if let (Some(encoding), Some(_)) = (config.get_response_encoding(&headers), &c) {
+                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }

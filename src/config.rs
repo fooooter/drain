@@ -176,7 +176,7 @@ impl Config {
     pub fn get_response_encoding(&self, headers: &HashMap<String, String>) -> Option<&String> {
         let encoding = &self.use_encoding;
 
-        if let (Some(content_encoding), Some(supported_encodings)) = (headers.get("Accept-Encoding"), &self.get_supported_encodings()) {
+        if let (Some(content_encoding), Some(supported_encodings)) = (headers.get("accept-encoding"), &self.get_supported_encodings()) {
             let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
 
             if accepted_encodings.contains(&encoding) && supported_encodings.contains(&encoding) {

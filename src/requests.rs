@@ -68,7 +68,7 @@ impl Request {
         let mut headers: HashMap<String, String> = HashMap::new();
 
         for header in headers_iter {
-            headers.insert(header[..header.find(':').unwrap()].to_string(), header[header.find(':').unwrap() + 2..].to_string());
+            headers.insert(header[..header.find(':').unwrap()].to_lowercase(), header[header.find(':').unwrap() + 2..].to_string());
         }
 
         let req = match req_type.trim() {
@@ -122,7 +122,7 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                if let Some(_) = &response_headers.get("Location") {
+                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), content).await;
                 }
 
@@ -204,7 +204,7 @@ where
                     response_headers.insert(String::from("Content-Length"), content_length);
                 }
 
-                if let Some(_) = &response_headers.get("Location") {
+                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
                 }
 
@@ -282,7 +282,7 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                if let Some(_) = &response_headers.get("Location") {
+                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), content).await;
                 }
 

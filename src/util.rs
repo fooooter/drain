@@ -211,7 +211,7 @@ where
             Request::Put {ref mut data, headers, ..} |
             Request::Patch {ref mut data, headers, ..} = &mut request {
         let mut buffer = BytesMut::with_capacity(
-            if let Ok(l) = headers.get("Content-Length").unwrap_or(&String::from("0")).parse::<usize>() {
+            if let Ok(l) = headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
                 if l != 0 {
                     l
                 } else {
@@ -235,7 +235,7 @@ where
         let mut data_raw: Vec<u8> = Vec::new();
         let data_processed;
 
-        match (headers.get("Content-Encoding"), config.get_supported_encodings()) {
+        match (headers.get("content-encoding"), config.get_supported_encodings()) {
             (Some(content_encoding), Some(supported_encodings))
             if supported_encodings.contains(content_encoding) => {
                 if content_encoding.eq("gzip") {

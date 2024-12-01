@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::pin::Pin;
 use openssl::error::ErrorStack;
-use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
+use openssl::ssl::{select_next_proto, AlpnError, Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use tokio::net::*;
 use tokio::*;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -45,8 +45,14 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
         ssl_ctx_builder.set_cipher_list(&config.https.cipher_list)?;
     }
 
-    ssl_ctx_builder.set_alpn_protos(b"\x08http/1.1")?;
     ssl_ctx_builder.set_verify(SslVerifyMode::PEER);
+    ssl_ctx_builder.set_alpn_select_callback(|_ssl, client_protocols| {
+        if let Some(p) = select_next_proto(b"\x08http/1.1", client_protocols) {
+            Ok(p)
+        } else {
+            Err(AlpnError::ALERT_FATAL)
+        }
+    });
 
     let ssl_ctx = ssl_ctx_builder.build();
     Ssl::new(&ssl_ctx)

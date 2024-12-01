@@ -13,6 +13,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use tokio::io::AsyncWriteExt;
 use bytes::BytesMut;
+use openssl::error::ErrorStack;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::Config;
 use crate::requests::{Request, RequestData};
@@ -136,11 +137,17 @@ where
             }
 
             let content_length_header = format!("Content-Length: {}\r\n", content_prepared.len());
-            response.push_str(&*format!("{content_length_header}"));
+            response.push_str(&*content_length_header);
 
-            if let Ok(etag) = hash(MessageDigest::md5(), &*content_prepared) {
-                let etag_header = format!("ETag: {}\r\n\r\n", base64::encode_block(&*etag));
-                response.push_str(&*format!("{etag_header}"));
+            match generate_etag(&*content_prepared) {
+                Ok(etag) => {
+                    let etag_header = format!("ETag: {etag}\r\n\r\n");
+                    response.push_str(&*etag_header);
+                },
+                Err(e) => {
+                    eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
+                                Continuing without ETag...", line!());
+                }
             }
 
             response_bytes = Vec::from(response);
@@ -151,11 +158,17 @@ where
         (None, Some(c)) => {
             let content_trim = c.trim_ascii_start();
             let content_length_header = format!("Content-Length: {}\r\n", content_trim.len());
-            response.push_str(&*format!("{content_length_header}"));
+            response.push_str(&*content_length_header);
 
-            if let Ok(etag) = hash(MessageDigest::md5(), &*content_trim) {
-                let etag_header = format!("ETag: {}\r\n\r\n", base64::encode_block(&*etag));
-                response.push_str(&*format!("{etag_header}"));
+            match generate_etag(content_trim) {
+                Ok(etag) => {
+                    let etag_header = format!("ETag: {etag}\r\n\r\n");
+                    response.push_str(&*etag_header);
+                },
+                Err(e) => {
+                    eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
+                                Continuing without ETag...", line!());
+                }
             }
 
             response_bytes = Vec::from(response);
@@ -297,6 +310,18 @@ where
         *data = Some(data_hm);
     }
     Ok(request)
+}
+
+pub fn generate_etag(content: &[u8]) -> Result<String, ErrorStack>  {
+    // match hash(MessageDigest::md5(), &*content) {
+    //     Ok(etag) => base64::encode_block(&*etag),
+    //     Err(e) => {
+    //         eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
+    //                     Continuing without ETag...", line!());
+    //     }
+    // }
+
+    Ok(base64::encode_block(&*hash(MessageDigest::md5(), content)?))
 }
 
 pub async fn rte_wrapper<T>(f: &mut File, buf: &mut Vec<u8>, stream: &mut T)

@@ -10,7 +10,7 @@ use openssl::error::ErrorStack;
 use openssl::ssl::{Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use tokio::net::*;
 use tokio::*;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_openssl::SslStream;
 use crate::requests::Request::{Get, Head, Options, Post};
 use crate::requests::*;

@@ -1,8 +1,10 @@
 use std::error::Error;
 use std::collections::HashMap;
+use std::str::FromStr;
 use tokio::fs::*;
 use regex::*;
 use libloading::Error as LibError;
+use mime_guess::Mime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::util::*;
 use crate::config::Config;
@@ -107,37 +109,62 @@ where
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
         let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Get {params: &None, headers}, &mut response_headers).await;
+        let content_type = response_headers.get("Content-Type");
 
-        if let Ok(c) = content {
-            if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
+        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                (mime.to_string(), mime.type_().to_string())
+            } else {
+                response_headers.remove(&String::from("Content-Type"));
+                return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
+            };
+
+            if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), c).await
+            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c)).await
         }
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
     }
 
     if config.dynamic_pages.contains(&resource) {
-        match page(&*resource, &mut stream, Get {params, headers}, &mut response_headers).await {
-            Ok(content) => {
-                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &content) {
+        let content = page(&*resource, &mut stream, Get {params, headers}, &mut response_headers).await;
+        let content_type = response_headers.get("Content-Type");
+
+        match (content, content_type) {
+            (Ok(Some(c)), Some(c_t)) => {
+                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                    (mime.to_string(), mime.type_().to_string())
+                } else {
+                    response_headers.remove(&String::from("Content-Type"));
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
+                };
+
+                if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
                 if response_headers.contains_key("Location") || response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), content).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), content).await;
-            }
-            Err(e) => {
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c)).await;
+            },
+            (Ok(None), _) | (Ok(Some(_)), None) => {
+                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
+                }
+
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await;
+            },
+            (Err(e), _) => {
                 match e {
                     LibError::DlSym {..} => {},
                     _ => {
-                        eprintln!("[handle_get():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
+                        eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
                         return Err(Box::new(e));
                     }
                 }
@@ -159,12 +186,7 @@ where
                 (String::from("application/octet-stream"), String::from("application"))
             };
 
-            if let (true, Some(encoding), false, true) = (&config.encoding.enabled,
-                                                                config.get_response_encoding(&headers),
-                                                                content_empty,
-                                                                general_type.eq("text") ||
-                                                                config.encoding.encoding_applicable_mime_types.contains(&guess))
-            {
+            if let Some(encoding) = config.get_response_encoding(&content, &guess, &general_type, headers) {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
@@ -175,14 +197,22 @@ where
         },
         Err(_) => {
             let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await;
+            let content_type = response_headers.get("Content-Type");
 
-            if let Ok(c) = content {
-                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
+            if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                    (mime.to_string(), mime.type_().to_string())
+                } else {
+                    response_headers.remove(&String::from("Content-Type"));
+                    return send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+                };
+
+                if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, Some(config), 404, Some(response_headers), c).await
+                return send_response(&mut stream, Some(config), 404, Some(response_headers), Some(c)).await;
             }
             send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
         }
@@ -275,14 +305,22 @@ where
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
         let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Post {data: &None, headers}, &mut response_headers).await;
+        let content_type = response_headers.get("Content-Type");
 
-        if let Ok(c) = content {
-            if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
+        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                (mime.to_string(), mime.type_().to_string())
+            } else {
+                response_headers.remove(&String::from("Content-Type"));
+                return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
+            };
+
+            if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), c).await
+            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c)).await
         }
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
     }
@@ -295,20 +333,37 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        match page(&*resource, &mut stream, Post {data, headers}, &mut response_headers).await {
-            Ok(content) => {
-                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &content) {
+        let content = page(&*resource, &mut stream, Post {data, headers}, &mut response_headers).await;
+        let content_type = response_headers.get("Content-Type");
+
+        match (content, content_type) {
+            (Ok(Some(c)), Some(c_t)) => {
+                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                    (mime.to_string(), mime.type_().to_string())
+                } else {
+                    response_headers.remove(&String::from("Content-Type"));
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
+                };
+
+                if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
                 if response_headers.contains_key("Location") || response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), content).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), content).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c)).await;
             },
-            Err(e) => {
+            (Ok(None), _) | (Ok(Some(_)), None) => {
+                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
+                }
+
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await;
+            },
+            (Err(e), _) => {
                 match e {
                     LibError::DlSym {..} => {},
                     _ => {
@@ -334,12 +389,7 @@ where
                 (String::from("application/octet-stream"), String::from("application"))
             };
 
-            if let (true, Some(encoding), false, true) = (&config.encoding.enabled,
-                                                                  config.get_response_encoding(&headers),
-                                                                  content_empty,
-                                                                  general_type.eq("text") ||
-                                                                  config.encoding.encoding_applicable_mime_types.contains(&guess))
-            {
+            if let Some(encoding) = config.get_response_encoding(&content, &guess, &general_type, headers) {
                 response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
@@ -350,14 +400,22 @@ where
         },
         Err(_) => {
             let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await;
+            let content_type = response_headers.get("Content-Type");
 
-            if let Ok(c) = content {
-                if let (true, Some(encoding), Some(_)) = (&config.encoding.enabled, config.get_response_encoding(&headers), &c) {
+            if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                    (mime.to_string(), mime.type_().to_string())
+                } else {
+                    response_headers.remove(&String::from("Content-Type"));
+                    return send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+                };
+
+                if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
                     response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, Some(config), 404, Some(response_headers), c).await
+                return send_response(&mut stream, Some(config), 404, Some(response_headers), Some(c)).await;
             }
             send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
         }

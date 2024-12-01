@@ -142,7 +142,7 @@ POST `data` is an application/x-www-form-urlencoded string parsed to a HashMap a
 
 `response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
-changing content type to JSON, for example.
+changing content type to JSON, for example. `Content-Type` header must be set explicitly, otherwise an empty page will be returned.
 
 ### Redirections
 

@@ -180,16 +180,21 @@ impl Config {
         Some(supported_encodings)
     }
 
-    pub fn get_response_encoding(&self, headers: &HashMap<String, String>) -> Option<&String> {
-        let encoding = &self.encoding.use_encoding;
-
-        if let (Some(content_encoding), Some(supported_encodings)) = (headers.get("accept-encoding"), &self.get_supported_encodings()) {
+    pub fn get_response_encoding(&self, content: &Vec<u8>, type_guess: &String, type_: &String, headers: &HashMap<String, String>) -> Option<&String> {
+        if let (true, false, true, Some(content_encoding), Some(supported_encodings)) = (
+                                                      &self.encoding.enabled,
+                                                      content.is_empty(),
+                                                      type_.eq("text") ||
+                                                      self.encoding.encoding_applicable_mime_types.contains(type_guess),
+                                                      headers.get("accept-encoding"),
+                                                      &self.get_supported_encodings())
+        {
+            let encoding = &self.encoding.use_encoding;
             let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
 
             if accepted_encodings.contains(&encoding) && supported_encodings.contains(&encoding) {
                 return Some(encoding)
             }
-            return None
         }
         None
     }

@@ -110,7 +110,7 @@ where
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let mut content_trim = &*Vec::from(c.trim_ascii());
+            let mut content_trim = c.trim_ascii();
             let mut content_prepared: Vec<u8> = Vec::new();
 
             if let Some(encoding) = h.get("Content-Encoding") {

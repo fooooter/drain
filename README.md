@@ -62,7 +62,7 @@ Currently available fields are:
     + TLS1.2
     
     Instead, it will be set to accept every protocol.
-  * `cipher_list` - a list of ciphers the server will use. Must be one of the following:
+  * `cipher_list` - a colon-separated list of ciphers the server will use. Must be one of the following:
     + TLS_AES_128_GCM_SHA256
     + TLS_AES_256_GCM_SHA384
     + TLS_CHACHA20_POLY1305_SHA256

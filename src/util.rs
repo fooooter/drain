@@ -7,6 +7,8 @@ use brotli::enc::BrotliEncoderParams;
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use libloading::{Library, Error as LibError};
+use openssl::hash::{hash, MessageDigest};
+use openssl::base64;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use tokio::io::AsyncWriteExt;
@@ -133,22 +135,30 @@ where
                 content_prepared = Vec::from(c.trim_ascii());
             }
 
-            let content_length_header = format!("Content-Length: {}\r\n\r\n", content_prepared.len());
+            let content_length_header = format!("Content-Length: {}\r\n", content_prepared.len());
             response.push_str(&*format!("{content_length_header}"));
 
-            response_bytes = Vec::from(response);
+            if let Ok(etag) = hash(MessageDigest::md5(), &*content_prepared) {
+                let etag_header = format!("ETag: {}\r\n\r\n", base64::encode_block(&*etag));
+                response.push_str(&*format!("{etag_header}"));
+            }
 
+            response_bytes = Vec::from(response);
             for x in content_prepared {
                 response_bytes.push(x);
             }
         },
         (None, Some(c)) => {
             let content_trim = c.trim_ascii_start();
-            let content_length_header = format!("Content-Length: {}\r\n\r\n", content_trim.len());
+            let content_length_header = format!("Content-Length: {}\r\n", content_trim.len());
             response.push_str(&*format!("{content_length_header}"));
 
-            response_bytes = Vec::from(response);
+            if let Ok(etag) = hash(MessageDigest::md5(), &*content_trim) {
+                let etag_header = format!("ETag: {}\r\n\r\n", base64::encode_block(&*etag));
+                response.push_str(&*format!("{etag_header}"));
+            }
 
+            response_bytes = Vec::from(response);
             for x in content_trim {
                 response_bytes.push(*x);
             }

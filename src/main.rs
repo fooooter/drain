@@ -6,6 +6,7 @@ mod error;
 use std::collections::HashMap;
 use std::error::Error;
 use std::pin::Pin;
+use std::sync::Arc;
 use openssl::error::ErrorStack;
 use openssl::ssl::{select_next_proto, AlpnError, Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use tokio::net::*;
@@ -58,19 +59,17 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     Ssl::new(&ssl_ctx)
 }
 
-async fn handle_connection<T>(mut stream: T) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(mut stream: T, config: &Config) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
-    let config = Config::new(Some(&mut stream)).await;
-
     match receive_request(&mut stream, &config).await {
         Ok(request) => {
             match request {
                 Get {resource, params, headers} => handle_get(stream, config, &headers, resource, &params).await,
                 Head {resource, headers} => handle_head(stream, config, &headers, resource).await,
                 Post {resource, headers, data} => handle_post(stream, config, &headers, resource, &data).await,
-                Options {resource, headers} => handle_options(stream, config, &headers, resource).await,
+                Options {..} => handle_options(stream, config).await,
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
@@ -91,14 +90,16 @@ where
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let config = Config::new::<TcpStream>(None).await;
+    let config = Arc::new(Config::new().await);
     let https_enabled = (&config.https.enabled).clone();
     let bind_host = &config.bind_host;
 
     if https_enabled {
         let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.https.bind_port)).await?;
         loop {
-            let ssl = configure_ssl(&config);
+            let config = config.clone();
+
+            let ssl = configure_ssl(&*config);
             match ssl {
                 Ok(ssl) => {
                     let (stream, _) = listener.accept().await?;
@@ -112,7 +113,7 @@ async fn main() -> io::Result<()> {
                     }
 
                     spawn(async move {
-                        if let Err(e) = handle_connection(stream).await {
+                        if let Err(e) = handle_connection(stream, &*config).await {
                             eprintln!("[main():{}] An error occurred while handling connection:\
                             \n{e}\n", line!());
                         }
@@ -131,10 +132,12 @@ async fn main() -> io::Result<()> {
 
     let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.bind_port)).await?;
     loop {
+        let config = config.clone();
+
         let (stream, _) = listener.accept().await?;
 
         spawn(async move {
-            if let Err(e) = handle_connection(stream).await {
+            if let Err(e) = handle_connection(stream, &*config).await {
                 eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
             }
         });

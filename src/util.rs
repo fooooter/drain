@@ -21,7 +21,7 @@ use crate::error::*;
 
 type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<Vec<u8>>;
 
-pub async fn send_response<T>(stream: &mut T, config: Option<Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<Vec<u8>>) -> Result<(), Box<dyn Error>>
+pub async fn send_response<T>(stream: &mut T, config: Option<&Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<Vec<u8>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -98,7 +98,7 @@ where
     response.push_str(&*date_header);
 
     let global_response_headers = if let Some(c) = config {
-        c.global_response_headers
+        c.global_response_headers.clone()
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };
@@ -349,13 +349,8 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub async fn page<'a, T>(page: &str, stream: &mut T, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>) -> Result<Option<Vec<u8>>, LibError>
-where
-    T: AsyncRead + AsyncWrite + Unpin
-{
+pub async fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>, config: &Config) -> Result<Option<Vec<u8>>, LibError> {
     unsafe {
-        let config = Config::new(Some(stream)).await;
-
         let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;
         let p = lib.get::<Page>(page_symbol.as_bytes())?;

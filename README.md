@@ -77,10 +77,7 @@ Currently available fields are:
   * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled). 
   The certificate must match the private key and a path to it must be relative to the `server_root`.
 
-
-
-Changing `bind`, `document_root`, `server_root` and fields inside `https` requires restarting the server for it to take effect, but the rest is applied dynamically once the config is saved.
-
+The server must be restarted in order for changes to take effect.
 ## Usage
 
 ### Structure

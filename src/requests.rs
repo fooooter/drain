@@ -89,7 +89,7 @@ impl Request {
     }
 }
 
-pub async fn handle_get<T>(mut stream: T, config: Config, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_get<T>(mut stream: T, config: &Config, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -108,7 +108,7 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Get {params: &None, headers}, &mut response_headers).await;
+        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Get {params: &None, headers}, &mut response_headers, config).await;
         let content_type = response_headers.get("Content-Type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -130,7 +130,7 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        let content = page(&*resource, &mut stream, Get {params, headers}, &mut response_headers).await;
+        let content = page(&*resource, Get {params, headers}, &mut response_headers, config).await;
         let content_type = response_headers.get("Content-Type");
 
         match (content, content_type) {
@@ -196,7 +196,7 @@ where
             send_response(&mut stream, Some(config), 200, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
         Err(_) => {
-            let content = page("not_found", &mut stream, Get {params: &None, headers}, &mut response_headers).await;
+            let content = page("not_found", Get {params: &None, headers}, &mut response_headers, config).await;
             let content_type = response_headers.get("Content-Type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -219,7 +219,7 @@ where
     }
 }
 
-pub async fn handle_head<T>(mut stream: T, config: Config, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>>
+pub async fn handle_head<T>(mut stream: T, config: &Config, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -242,7 +242,7 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        match page(&*resource, &mut stream, Head {headers}, &mut response_headers).await {
+        match page(&*resource, Head {headers}, &mut response_headers, config).await {
             Ok(content) => {
                 if let Some(c) = content {
                     let content_length = c.len().to_string();
@@ -285,7 +285,7 @@ where
     }
 }
 
-pub async fn handle_post<T>(mut stream: T, config: Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_post<T>(mut stream: T, config: &Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -304,7 +304,7 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, &mut stream, Post {data: &None, headers}, &mut response_headers).await;
+        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Post {data: &None, headers}, &mut response_headers, config).await;
         let content_type = response_headers.get("Content-Type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -333,7 +333,7 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        let content = page(&*resource, &mut stream, Post {data, headers}, &mut response_headers).await;
+        let content = page(&*resource, Post {data, headers}, &mut response_headers, config).await;
         let content_type = response_headers.get("Content-Type");
 
         match (content, content_type) {
@@ -399,7 +399,7 @@ where
             send_response(&mut stream, Some(config), 204, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
         Err(_) => {
-            let content = page("not_found", &mut stream, Post {data: &data, headers}, &mut response_headers).await;
+            let content = page("not_found", Post {data: &data, headers}, &mut response_headers, config).await;
             let content_type = response_headers.get("Content-Type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -422,7 +422,7 @@ where
     }
 }
 
-pub async fn handle_options<T>(mut stream: T, config: Config, _headers: &HashMap<String, String>, _resource: String) -> Result<(), Box<dyn Error>>
+pub async fn handle_options<T>(mut stream: T, config: &Config) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {

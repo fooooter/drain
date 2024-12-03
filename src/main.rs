@@ -6,8 +6,6 @@ mod error;
 use std::collections::HashMap;
 use std::error::Error;
 use std::pin::Pin;
-use std::sync::Arc;
-use libloading::Library;
 use openssl::error::ErrorStack;
 use openssl::ssl::{select_next_proto, AlpnError, Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use tokio::net::*;
@@ -60,7 +58,7 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     Ssl::new(&ssl_ctx)
 }
 
-async fn handle_connection<T>(mut stream: T, dynamic_pages_library: &Library) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(mut stream: T) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -69,10 +67,10 @@ where
     match receive_request(&mut stream, &config).await {
         Ok(request) => {
             match request {
-                Get {resource, params, headers} => handle_get(stream, config, &headers, resource, &params, dynamic_pages_library).await,
-                Head {resource, headers} => handle_head(stream, config, &headers, resource, dynamic_pages_library).await,
-                Post {resource, headers, data} => handle_post(stream, config, &headers, resource, &data, dynamic_pages_library).await,
-                Options {..} => handle_options(stream, config).await,
+                Get {resource, params, headers} => handle_get(stream, config, &headers, resource, &params).await,
+                Head {resource, headers} => handle_head(stream, config, &headers, resource).await,
+                Post {resource, headers, data} => handle_post(stream, config, &headers, resource, &data).await,
+                Options {resource, headers} => handle_options(stream, config, &headers, resource).await,
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
@@ -96,14 +94,6 @@ async fn main() -> io::Result<()> {
     let config = Config::new::<TcpStream>(None).await;
     let https_enabled = (&config.https.enabled).clone();
     let bind_host = &config.bind_host;
-    let dynamic_pages_library = Arc::new(match unsafe {Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))} {
-        Ok(dynamic_pages_library) => dynamic_pages_library,
-        Err(e) => {
-            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.\n\
-                        Error information:\n{e}\n", line!());
-            panic!("Unrecoverable error occurred while setting up the server.");
-        }
-    });
 
     if https_enabled {
         let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.https.bind_port)).await?;
@@ -121,10 +111,8 @@ async fn main() -> io::Result<()> {
                         break;
                     }
 
-                    let dynamic_pages_library = dynamic_pages_library.clone();
-
                     spawn(async move {
-                        if let Err(e) = handle_connection(stream, &*dynamic_pages_library).await {
+                        if let Err(e) = handle_connection(stream).await {
                             eprintln!("[main():{}] An error occurred while handling connection:\
                             \n{e}\n", line!());
                         }
@@ -145,10 +133,8 @@ async fn main() -> io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
 
-        let dynamic_pages_library = dynamic_pages_library.clone();
-
         spawn(async move {
-            if let Err(e) = handle_connection(stream, &*dynamic_pages_library).await {
+            if let Err(e) = handle_connection(stream).await {
                 eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
             }
         });

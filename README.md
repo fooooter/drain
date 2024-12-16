@@ -80,7 +80,9 @@ The server must be restarted in order for changes to take effect.
 ## Usage
 
 ### Template
-It's advised to use a template - https://github.com/fooooter/drain_page_template.
+
+It's strongly advised to use a template - https://github.com/fooooter/drain_page_template
+(mainly because the default 404 and 403 pages are defined inside this template)
 
 ### Structure
 

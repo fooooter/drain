@@ -22,11 +22,11 @@ the core and recompiling the server only to change one thing on a page.
 
 ## Build
 
-To build the server, run `cargo build` in the root of a source.
+To build Drain, run `cargo build` in the root of a source.
 
 ## Configuration
 
-Server can be configured using config.json file. In order to use a config.json file, you have to specify it in `WEB_SERVER_CONFIG` environment variable. 
+Drain can be configured using config.json file. In order to use a config.json file, you have to specify it in `DRAIN_CONFIG` environment variable. 
 Currently available fields are:
 
 - `global_response_headers` - it's a list of key-value pairs, which stand for default response headers appended to every
@@ -76,7 +76,8 @@ Currently available fields are:
   * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled). 
   The certificate must match the private key and a path to it must be relative to the `server_root`.
 
-The server must be restarted in order for changes to take effect.
+Drain must be restarted in order for changes to take effect.
+
 ## Usage
 
 ### Template

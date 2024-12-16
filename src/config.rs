@@ -46,7 +46,7 @@ pub struct Config {
 
 impl Config {
     pub async fn new() -> Self {
-        let config_path = env::var("WEB_SERVER_CONFIG");
+        let config_path = env::var("DRAIN_CONFIG");
         let config_file;
 
         match &config_path {

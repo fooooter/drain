@@ -1,8 +1,8 @@
 [package]
-name = "web_server"
+name = "drain"
 version = "0.6.0"
 edition = "2021"
-repository = "https://github.com/fooooter/web_server_poc"
+repository = "https://github.com/fooooter/drain"
 license = "LGPL-3.0-or-later"
 
 [dependencies]
@@ -19,3 +19,4 @@ flate2 = "1.0.34"
 brotli = "7.0.0"
 libloading = "0.8.5"
 bytes = "1.8.0"
+drain_common = { git = "https://github.com/fooooter/drain_common" }

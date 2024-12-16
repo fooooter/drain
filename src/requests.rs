@@ -8,7 +8,7 @@ use mime_guess::Mime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::util::*;
 use crate::config::Config;
-use crate::requests::RequestData::{*};
+use drain_common::RequestData::{*};
 use crate::error::ServerError;
 
 pub enum Request {
@@ -21,12 +21,6 @@ pub enum Request {
     Options {resource: String, headers: HashMap<String, String>},
     Trace {resource: String, headers: HashMap<String, String>},
     Patch {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
-}
-
-pub enum RequestData<'a> {
-    Get {params: &'a Option<HashMap<String, String>>, headers: &'a HashMap<String, String>},
-    Post {headers: &'a HashMap<String, String>, data: &'a Option<HashMap<String, String>>},
-    Head {headers: &'a HashMap<String, String>}
 }
 
 impl Request {

@@ -14,9 +14,10 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader}
 use tokio::io::AsyncWriteExt;
 use bytes::BytesMut;
 use openssl::error::ErrorStack;
+use drain_common::RequestData;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::Config;
-use crate::requests::{Request, RequestData};
+use crate::requests::Request;
 use crate::error::*;
 
 type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<Vec<u8>>;

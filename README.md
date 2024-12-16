@@ -22,8 +22,7 @@ the core and recompiling the server only to change one thing on a page.
 
 ## Build
 
-- To build the server, run `cargo build` in the root of a source.
-- To build the library containing the dynamic pages, run `cargo build` in dynamic_pages directory (don't forget to specify the binary in config.json)
+To build the server, run `cargo build` in the root of a source.
 
 ## Configuration
 
@@ -79,6 +78,9 @@ Currently available fields are:
 
 The server must be restarted in order for changes to take effect.
 ## Usage
+
+### Template
+It's advised to use a template - https://github.com/fooooter/drain_page_template.
 
 ### Structure
 

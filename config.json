@@ -1,8 +1,7 @@
 {
   "global_response_headers": {
     "Connection": "keep-alive",
-    "Keep-Alive": "timeout=5, max=100",
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains"
+    "Keep-Alive": "timeout=5, max=100"
   },
   "access_control": {
     "deny_action": 404,
@@ -14,7 +13,8 @@
   "bind_host": "127.0.0.1",
   "bind_port": "80",
   "dynamic_pages": [
-    "index"
+    "login",
+    "register"
   ],
   "dynamic_pages_library": "libdynamic_pages.so",
   "encoding": {
@@ -31,10 +31,10 @@
       "application/x-sh"
     ]
   },
-  "document_root": "/www",
-  "server_root": "/usr/local/etc/web_server",
+  "document_root": "htdocs",
+  "server_root": "/home/footer/RustroverProjects/web_server_poc",
   "https": {
-    "enabled": true,
+    "enabled": false,
     "bind_port": "443",
     "min_protocol_version": "TLS1.3",
     "cipher_list": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",

@@ -67,7 +67,7 @@ impl Request {
 
         for header in headers_iter {
             let header_split = header.split_once(':').unwrap();
-            headers.insert(header_split.0.to_lowercase(), String::from(header_split.1));
+            headers.insert(header_split.0.trim().to_lowercase(), String::from(header_split.1.trim()));
         }
 
         let req = match req_type.trim() {

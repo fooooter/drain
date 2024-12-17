@@ -40,15 +40,17 @@ impl Request {
 
         let req_type = iter_req_line.next().unwrap().to_uppercase();
         let resource_with_params = iter_req_line.next().unwrap().trim();
-        let mut resource = resource_with_params.to_string();
+        let mut resource = String::from(resource_with_params);
         let mut params: HashMap<String, String> = HashMap::new();
 
         if request_line.contains('?') {
-            resource = resource_with_params[..resource_with_params.find('?').unwrap()].parse::<String>().unwrap();
-            let params_str = resource_with_params[resource_with_params.find('?').unwrap() + 1..].parse::<String>().unwrap();
+            let resource_split = resource_with_params.split_once('?').unwrap();
+            resource = String::from(resource_split.0);
+            let params_str = String::from(resource_split.1);
 
             for kv in params_str.split('&') {
-                if let Some(_) = params.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
+                let param_split = kv.split_once('=').unwrap();
+                if let Some(_) = params.insert(String::from(param_split.0), String::from(param_split.1)) {
                     return Err(ServerError::InvalidRequest);
                 }
             }
@@ -64,7 +66,8 @@ impl Request {
         let mut headers: HashMap<String, String> = HashMap::new();
 
         for header in headers_iter {
-            headers.insert(header[..header.find(':').unwrap()].to_lowercase(), header[header.find(':').unwrap() + 2..].to_string());
+            let header_split = header.split_once(':').unwrap();
+            headers.insert(header_split.0.to_lowercase(), String::from(header_split.1));
         }
 
         let req = match req_type.trim() {
@@ -102,7 +105,7 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Get {params: &None, headers}, &mut response_headers, config).await;
+        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Get {params: &None, headers}, &mut response_headers, config);
         let content_type = response_headers.get("Content-Type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -124,7 +127,7 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        let content = page(&*resource, Get {params, headers}, &mut response_headers, config).await;
+        let content = page(&*resource, Get {params, headers}, &mut response_headers, config);
         let content_type = response_headers.get("Content-Type");
 
         match (content, content_type) {
@@ -190,7 +193,7 @@ where
             send_response(&mut stream, Some(config), 200, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
         Err(_) => {
-            let content = page("not_found", Get {params: &None, headers}, &mut response_headers, config).await;
+            let content = page("not_found", Get {params: &None, headers}, &mut response_headers, config);
             let content_type = response_headers.get("Content-Type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -236,7 +239,7 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        match page(&*resource, Head {headers}, &mut response_headers, config).await {
+        match page(&*resource, Head {headers}, &mut response_headers, config) {
             Ok(content) => {
                 if let Some(c) = content {
                     let content_length = c.len().to_string();
@@ -298,7 +301,7 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Post {data: &None, headers}, &mut response_headers, config).await;
+        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Post {data: &None, headers}, &mut response_headers, config);
         let content_type = response_headers.get("Content-Type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -327,7 +330,7 @@ where
     }
 
     if config.dynamic_pages.contains(&resource) {
-        let content = page(&*resource, Post {data, headers}, &mut response_headers, config).await;
+        let content = page(&*resource, Post {data, headers}, &mut response_headers, config);
         let content_type = response_headers.get("Content-Type");
 
         match (content, content_type) {
@@ -393,7 +396,7 @@ where
             send_response(&mut stream, Some(config), 204, Some(response_headers), if !content_empty {Some(content)} else {None}).await
         },
         Err(_) => {
-            let content = page("not_found", Post {data: &data, headers}, &mut response_headers, config).await;
+            let content = page("not_found", Post {data: &data, headers}, &mut response_headers, config);
             let content_type = response_headers.get("Content-Type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {

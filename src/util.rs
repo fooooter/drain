@@ -314,14 +314,6 @@ where
 }
 
 pub fn generate_etag(content: &[u8]) -> Result<String, ErrorStack>  {
-    // match hash(MessageDigest::md5(), &*content) {
-    //     Ok(etag) => base64::encode_block(&*etag),
-    //     Err(e) => {
-    //         eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
-    //                     Continuing without ETag...", line!());
-    //     }
-    // }
-
     Ok(base64::encode_block(&*hash(MessageDigest::md5(), content)?))
 }
 
@@ -350,7 +342,7 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub async fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>, config: &Config) -> Result<Option<Vec<u8>>, LibError> {
+pub fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>, config: &Config) -> Result<Option<Vec<u8>>, LibError> {
     unsafe {
         let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;

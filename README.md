@@ -38,7 +38,7 @@ Currently available fields are:
   page corresponding to each status if access to the resource is denied. For safety reasons, the default is 404, so that a client won't
   know if the resource is unavailable or access to it is denied.
 - `bind_host` - bind host to the server.
-- `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or other another privileged user.
+- `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or another privileged user.
 - `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
 - `dynamic_pages_library` - a path to the dynamic library for dynamic pages, which must be relative to the `server_root`.
 - `encoding`:

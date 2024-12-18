@@ -85,16 +85,22 @@ Drain must be restarted in order for changes to take effect.
 It's strongly advised to use a template - https://github.com/fooooter/drain_page_template
 (mainly because the default 404 and 403 pages are defined inside this template)
 
+### Macros
+
+Stick to the macro library if possible - https://github.com/fooooter/drain_macros
+
 ### Structure
 
 Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
 
 ```rust
 use std::collections::HashMap;
-use crate::RequestData::{self, *};
+use drain_common::RequestData::{self, *};
+use drain_macros::*;
 
 #[export_name = "index"]
-pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, String>) -> Option<Vec<u8>> {
+#[drain_page]
+pub fn index() -> Option<Vec<u8>> {
     let content: Vec<u8> = Vec::from(format!(r#"
     <!DOCTYPE html>
         <head>
@@ -111,7 +117,7 @@ pub fn index(request_data: RequestData, response_headers: &mut HashMap<String, S
         Head {..} => "HEAD"
     }));
 
-    response_headers.insert(String::from("Content-Type"), String::from("text/html; charset=utf-8"));
+    header!("Content-Type", "text/html; charset=utf-8");
 
     Some(content)
 }
@@ -140,11 +146,14 @@ pub enum RequestData<'a> {
 ```
 
 POST `data` is an application/x-www-form-urlencoded string parsed to a HashMap and GET
-`params` are regular key-value pairs sent in the URL.
+`params` are regular key-value pairs sent in the URL. `headers`, however is a HashMap containing every request header field.
+
+### `response_headers`
 
 `response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
 changing content type to JSON, for example. `Content-Type` header must be set explicitly, otherwise an empty page will be returned.
+You should use the `header!` macro whenever possible.
 
 ### Redirections
 

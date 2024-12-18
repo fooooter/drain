@@ -347,7 +347,9 @@ pub fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers:
         let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;
         let p = lib.get::<Page>(page_symbol.as_bytes())?;
+        let content = p(request_data, &mut response_headers);
+        lib.close()?;
 
-        Ok(p(request_data, &mut response_headers))
+        Ok(content)
     }
 }

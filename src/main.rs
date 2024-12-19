@@ -73,15 +73,15 @@ where
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-                    send_response(&mut stream, Some(config), 405, Some(accept_header), None).await
+                    send_response(&mut stream, Some(config), 405, Some(accept_header), None, None).await
                 }
             }
         },
         Err(e) => {
             if let ServerError::DecompressionError(..) = e {
-                send_response(&mut stream, Some(config), 406, None, None).await?;
+                send_response(&mut stream, Some(config), 406, None, None, None).await?;
             } else {
-                send_response(&mut stream, Some(config), 400, None, None).await?;
+                send_response(&mut stream, Some(config), 400, None, None, None).await?;
             }
             Err(Box::new(e))
         }

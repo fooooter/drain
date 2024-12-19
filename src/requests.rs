@@ -10,6 +10,7 @@ use crate::util::*;
 use crate::config::Config;
 use crate::error::ServerError;
 use drain_common::RequestData::{*};
+use drain_common::cookies::SetCookie;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -105,7 +106,13 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Get {params: &None, headers}, &mut response_headers, config);
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = page(
+            if deny_action == 404 {"not_found"} else {"forbidden"},
+            Get {params: &None, headers},
+            &mut response_headers,
+            &mut set_cookie,
+            config);
         let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -113,7 +120,7 @@ where
                 (mime.to_string(), mime.type_().to_string())
             } else {
                 response_headers.remove(&String::from("content-type"));
-                return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
+                return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
             };
 
             if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -121,13 +128,14 @@ where
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c)).await
+            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
         }
-        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
     }
 
     if config.dynamic_pages.contains(&resource) {
-        let content = page(&*resource, Get {params, headers}, &mut response_headers, config);
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = page(&*resource, Get {params, headers}, &mut response_headers, &mut set_cookie, config);
         let content_type = response_headers.get("content-type");
 
         match (content, content_type) {
@@ -136,7 +144,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await
                 };
 
                 if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -145,17 +153,17 @@ where
                 }
 
                 if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c)).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c), Some(set_cookie)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c)).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c), Some(set_cookie)).await;
             },
             (Ok(None), _) | (Ok(Some(_)), None) => {
                 if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
             },
             (Err(e), _) => {
                 match e {
@@ -190,10 +198,11 @@ where
 
             response_headers.insert(String::from("Content-Type"), guess);
 
-            send_response(&mut stream, Some(config), 200, Some(response_headers), if !content_empty {Some(content)} else {None}).await
+            send_response(&mut stream, Some(config), 200, Some(response_headers), if !content_empty {Some(content)} else {None}, None).await
         },
         Err(_) => {
-            let content = page("not_found", Get {params: &None, headers}, &mut response_headers, config);
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let content = page("not_found", Get {params: &None, headers}, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -201,7 +210,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+                    return send_response(&mut stream, Some(config), 404, Some(response_headers), None, Some(set_cookie)).await
                 };
 
                 if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -209,9 +218,9 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, Some(config), 404, Some(response_headers), Some(c)).await;
+                return send_response(&mut stream, Some(config), 404, Some(response_headers), Some(c), Some(set_cookie)).await;
             }
-            send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+            send_response(&mut stream, Some(config), 404, Some(response_headers), None, Some(set_cookie)).await
         }
     }
 }
@@ -235,22 +244,23 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await;
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, None).await;
     }
 
     if config.dynamic_pages.contains(&resource) {
-        match page(&*resource, Head {headers}, &mut response_headers, config) {
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        match page(&*resource, Head {headers}, &mut response_headers, &mut set_cookie, config) {
             Ok(content) => {
                 if let Some(c) = content {
                     let content_length = c.len().to_string();
                     response_headers.insert(String::from("Content-Length"), content_length);
                 }
 
-                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
+                if response_headers.contains_key("location") {
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
             },
             Err(e) => {
                 match e {
@@ -274,10 +284,10 @@ where
             let content_length = content.len().to_string();
             response_headers.insert(String::from("Content-Length"), content_length);
 
-            send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
+            send_response(&mut stream, Some(config), 200, Some(response_headers), None, None).await
         },
         Err(_) => {
-            send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+            send_response(&mut stream, Some(config), 404, Some(response_headers), None, None).await
         }
     }
 }
@@ -301,7 +311,13 @@ where
 
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
-        let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Post {data: &None, headers}, &mut response_headers, config);
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = page(
+            if deny_action == 404 {"not_found"} else {"forbidden"},
+            Post {data: &None, headers},
+            &mut response_headers,
+            &mut set_cookie,
+            config);
         let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -309,7 +325,7 @@ where
                 (mime.to_string(), mime.type_().to_string())
             } else {
                 response_headers.remove(&String::from("content-type"));
-                return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
+                return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
             };
 
             if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -317,20 +333,21 @@ where
                 response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
             }
 
-            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c)).await
+            return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
         }
-        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
     }
 
     if !headers.get("content-type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
         response_headers.insert(String::from("Accept-Post"), String::from("application/x-www-form-urlencoded"));
         response_headers.insert(String::from("Vary"), String::from("Content-Type"));
 
-        return send_response(&mut stream, Some(config), 415, Some(response_headers), None).await;
+        return send_response(&mut stream, Some(config), 415, Some(response_headers), None, None).await;
     }
 
     if config.dynamic_pages.contains(&resource) {
-        let content = page(&*resource, Post {data, headers}, &mut response_headers, config);
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = page(&*resource, Post {data, headers}, &mut response_headers, &mut set_cookie, config);
         let content_type = response_headers.get("content-type");
 
         match (content, content_type) {
@@ -339,7 +356,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await
                 };
 
                 if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -348,17 +365,17 @@ where
                 }
 
                 if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c)).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c), Some(set_cookie)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c)).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c), Some(set_cookie)).await;
             },
             (Ok(None), _) | (Ok(Some(_)), None) => {
                 if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
+                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
                 }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await;
+                return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
             },
             (Err(e), _) => {
                 match e {
@@ -393,10 +410,11 @@ where
 
             response_headers.insert(String::from("Content-Type"), guess);
 
-            send_response(&mut stream, Some(config), 204, Some(response_headers), if !content_empty {Some(content)} else {None}).await
+            send_response(&mut stream, Some(config), 204, Some(response_headers), if !content_empty {Some(content)} else {None}, None).await
         },
         Err(_) => {
-            let content = page("not_found", Post {data: &data, headers}, &mut response_headers, config);
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let content = page("not_found", Post {data: &data, headers}, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -404,7 +422,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+                    return send_response(&mut stream, Some(config), 404, Some(response_headers), None, Some(set_cookie)).await
                 };
 
                 if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -412,9 +430,9 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, Some(config), 404, Some(response_headers), Some(c)).await;
+                return send_response(&mut stream, Some(config), 404, Some(response_headers), Some(c), Some(set_cookie)).await;
             }
-            send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
+            send_response(&mut stream, Some(config), 404, Some(response_headers), None, Some(set_cookie)).await
         }
     }
 }
@@ -425,5 +443,5 @@ where
 {
     let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-    send_response(&mut stream, Some(config),204, Some(response_headers), None).await
+    send_response(&mut stream, Some(config),204, Some(response_headers), None, None).await
 }

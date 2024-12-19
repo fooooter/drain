@@ -4,7 +4,7 @@
 [✔]   	HEAD<br>
 [✔]   	POST<br>
 [✔]	Auto-detect MIME types<br>
-[✖]		Cookies<br>
+[✔]	Cookies<br>
 [✖]		Sessions<br>
 [✔]	Config (now JSON)<br>
 [✔]     Compression (GZIP and Brotli for now)<br>

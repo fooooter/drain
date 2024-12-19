@@ -14,15 +14,21 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader}
 use tokio::io::AsyncWriteExt;
 use bytes::BytesMut;
 use openssl::error::ErrorStack;
+use drain_common::cookies::{SetCookie, SameSite};
 use drain_common::RequestData;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::Config;
 use crate::requests::Request;
 use crate::error::*;
 
-type Page = fn(RequestData, &mut HashMap<String, String>) -> Option<Vec<u8>>;
+type Page = fn(RequestData, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Option<Vec<u8>>;
 
-pub async fn send_response<T>(stream: &mut T, config: Option<&Config>, status: u16, mut local_response_headers: Option<HashMap<String, String>>, content: Option<Vec<u8>>) -> Result<(), Box<dyn Error>>
+pub async fn send_response<T>(stream: &mut T,
+                              config: Option<&Config>,
+                              status: u16,
+                              mut local_response_headers: Option<HashMap<String, String>>,
+                              content: Option<Vec<u8>>,
+                              set_cookie: Option<HashMap<String, SetCookie>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -104,6 +110,49 @@ where
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };
 
+    if let Some(set_cookie) = set_cookie {
+        if !set_cookie.is_empty() {
+            for (k, v) in set_cookie {
+                response.push_str(&format!("Set-Cookie: {}={}", k, v.value));
+                if let Some(domain) = &v.domain {
+                    response.push_str(&format!("; Domain={}", domain));
+                }
+                if let Some(expires) = &v.expires {
+                    response.push_str(&format!("; Expires={}", expires));
+                }
+                if v.httponly {
+                    response.push_str("; HttpOnly");
+                }
+                if let Some(max_age) = &v.max_age {
+                    response.push_str(&format!("; Max-Age={}", max_age));
+                }
+                if v.partitioned {
+                    response.push_str("; Partitioned");
+                }
+                if let Some(path) = &v.path {
+                    response.push_str(&format!("; Path={}", path));
+                }
+                if v.secure {
+                    response.push_str("Secure");
+                }
+                if let Some(samesite) = &v.samesite {
+                    match samesite {
+                        SameSite::Strict => {
+                            response.push_str("; SameSite=Strict");
+                        },
+                        SameSite::Lax => {
+                            response.push_str("; SameSite=Lax");
+                        },
+                        SameSite::None => {
+                            response.push_str("; SameSite=None");
+                        }
+                    }
+                }
+                response.push_str("\r\n");
+            }
+        }
+    }
+
     let mut response_bytes: Vec<u8>;
 
     match (&mut local_response_headers, content) {
@@ -183,6 +232,7 @@ where
             for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
+
             response.push_str("\r\n");
             response_bytes = Vec::from(response);
         },
@@ -342,12 +392,17 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub fn page<'a>(page: &str, request_data: RequestData<'a>, mut response_headers: &mut HashMap<String, String>, config: &Config) -> Result<Option<Vec<u8>>, LibError> {
+pub fn page<'a>(page: &str,
+                request_data: RequestData<'a>,
+                mut response_headers: &mut HashMap<String, String>,
+                mut set_cookie: &mut HashMap<String, SetCookie>,
+                config: &Config) -> Result<Option<Vec<u8>>, LibError>
+{
     unsafe {
         let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;
         let p = lib.get::<Page>(page_symbol.as_bytes())?;
-        let content = p(request_data, &mut response_headers);
+        let content = p(request_data, &mut response_headers, &mut set_cookie);
         lib.close()?;
 
         Ok(content)

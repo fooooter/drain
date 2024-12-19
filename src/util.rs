@@ -301,9 +301,9 @@ where
         }
 
         let mut data_hm: HashMap<String, String> = HashMap::new();
-
         for kv in data_processed.split('&') {
-            if let Some(_) = &data_hm.insert(kv[..kv.find('=').unwrap()].to_string(), kv[kv.find('=').unwrap() + 1..].to_string()) {
+            let kv_split = kv.split_once('=').unwrap();
+            if let Some(_) = &data_hm.insert(String::from(kv_split.0), String::from(kv_split.1)) {
                 return Err(ServerError::UnsupportedEncoding);
             }
         }

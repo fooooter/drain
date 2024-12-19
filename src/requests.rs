@@ -8,8 +8,8 @@ use mime_guess::Mime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::util::*;
 use crate::config::Config;
-use drain_common::RequestData::{*};
 use crate::error::ServerError;
+use drain_common::RequestData::{*};
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -106,13 +106,13 @@ where
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
         let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Get {params: &None, headers}, &mut response_headers, config);
-        let content_type = response_headers.get("Content-Type");
+        let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
             let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
                 (mime.to_string(), mime.type_().to_string())
             } else {
-                response_headers.remove(&String::from("Content-Type"));
+                response_headers.remove(&String::from("content-type"));
                 return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
             };
 
@@ -128,14 +128,14 @@ where
 
     if config.dynamic_pages.contains(&resource) {
         let content = page(&*resource, Get {params, headers}, &mut response_headers, config);
-        let content_type = response_headers.get("Content-Type");
+        let content_type = response_headers.get("content-type");
 
         match (content, content_type) {
             (Ok(Some(c)), Some(c_t)) => {
                 let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
                     (mime.to_string(), mime.type_().to_string())
                 } else {
-                    response_headers.remove(&String::from("Content-Type"));
+                    response_headers.remove(&String::from("content-type"));
                     return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
                 };
 
@@ -144,14 +144,14 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
+                if response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c)).await;
                 }
 
                 return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c)).await;
             },
             (Ok(None), _) | (Ok(Some(_)), None) => {
-                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
+                if response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
                 }
 
@@ -194,13 +194,13 @@ where
         },
         Err(_) => {
             let content = page("not_found", Get {params: &None, headers}, &mut response_headers, config);
-            let content_type = response_headers.get("Content-Type");
+            let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
                 let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
                     (mime.to_string(), mime.type_().to_string())
                 } else {
-                    response_headers.remove(&String::from("Content-Type"));
+                    response_headers.remove(&String::from("content-type"));
                     return send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
                 };
 
@@ -302,13 +302,13 @@ where
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
         let content = page(if deny_action == 404 {"not_found"} else {"forbidden"}, Post {data: &None, headers}, &mut response_headers, config);
-        let content_type = response_headers.get("Content-Type");
+        let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
             let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
                 (mime.to_string(), mime.type_().to_string())
             } else {
-                response_headers.remove(&String::from("Content-Type"));
+                response_headers.remove(&String::from("content-type"));
                 return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
             };
 
@@ -322,7 +322,7 @@ where
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None).await
     }
 
-    if !headers.get("Content-Type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
+    if !headers.get("content-type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
         response_headers.insert(String::from("Accept-Post"), String::from("application/x-www-form-urlencoded"));
         response_headers.insert(String::from("Vary"), String::from("Content-Type"));
 
@@ -331,14 +331,14 @@ where
 
     if config.dynamic_pages.contains(&resource) {
         let content = page(&*resource, Post {data, headers}, &mut response_headers, config);
-        let content_type = response_headers.get("Content-Type");
+        let content_type = response_headers.get("content-type");
 
         match (content, content_type) {
             (Ok(Some(c)), Some(c_t)) => {
                 let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
                     (mime.to_string(), mime.type_().to_string())
                 } else {
-                    response_headers.remove(&String::from("Content-Type"));
+                    response_headers.remove(&String::from("content-type"));
                     return send_response(&mut stream, Some(config), 200, Some(response_headers), None).await
                 };
 
@@ -347,14 +347,14 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
+                if response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c)).await;
                 }
 
                 return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c)).await;
             },
             (Ok(None), _) | (Ok(Some(_)), None) => {
-                if response_headers.contains_key("Location") || response_headers.contains_key("location") {
+                if response_headers.contains_key("location") {
                     return send_response(&mut stream, Some(config), 302, Some(response_headers), None).await;
                 }
 
@@ -397,13 +397,13 @@ where
         },
         Err(_) => {
             let content = page("not_found", Post {data: &data, headers}, &mut response_headers, config);
-            let content_type = response_headers.get("Content-Type");
+            let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
                 let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
                     (mime.to_string(), mime.type_().to_string())
                 } else {
-                    response_headers.remove(&String::from("Content-Type"));
+                    response_headers.remove(&String::from("content-type"));
                     return send_response(&mut stream, Some(config), 404, Some(response_headers), None).await
                 };
 

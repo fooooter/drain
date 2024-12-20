@@ -95,13 +95,12 @@ Each page should be a Rust module defined in a separate file, declared in lib.rs
 
 ```rust
 use std::collections::HashMap;
-use drain_common::RequestData::{self, *};
-use drain_common::cookies::SetCookie;
+use drain_common::RequestData::*;
 use drain_macros::*;
 
 #[export_name = "index"]
 #[drain_page]
-pub fn index() -> Option<Vec<u8>> {
+pub fn index() {
     let content: Vec<u8> = Vec::from(format!(r#"
         <!DOCTYPE html>
             <head>
@@ -125,6 +124,9 @@ pub fn index() -> Option<Vec<u8>> {
 ```
 
 Every variable mentioned below is always present in the scope.
+Though, async is not present in the function definition, the entire scope is asynchronous and every `Future` inside can be awaited.
+It's using a Tokio runtime, so if you decide to import SQLx or other asynchronous crate, go ahead and specify Tokio in "features" in Cargo.toml.
+The dynamic page ALWAYS returns `Option<Vec<u8>>`, no matter what you specify as a return type (it'll be ignored and `Option<Vec<u8>>` will be used regardless).
 
 ### Naming convention
 
@@ -160,6 +162,8 @@ changing content type to JSON, for example. `Content-Type` header must be set ex
 You should use the `set_header!` and `header!` macros respectively, whenever possible.
 
 ### Cookies
+
+`set_cookie` is a HashMap containing every cookie to be set by the client. It's initially empty, and is also mutably referenced.
 
 To get a HashMap of all cookies, you can call the `cookies` function from `drain_common` crate.
 Cookies can be set by inserting a name of the cookie and a `SetCookie` struct into the `set_cookie` HashMap.

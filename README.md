@@ -165,7 +165,8 @@ You should use the `set_header!` and `header!` macros respectively, whenever pos
 
 `set_cookie` is a HashMap containing every cookie to be set by the client. It's initially empty, and is also mutably referenced.
 
-To get a HashMap of all cookies, you can call the `cookies` function from `drain_common` crate.
+To get a HashMap of all cookies, you can use the `cookies!` macro. 
+Keep in mind, that it returns `Option<HashMap<String, String>>`, so the result can be `None` if there are no cookies.
 Cookies can be set by inserting a name of the cookie and a `SetCookie` struct into the `set_cookie` HashMap.
 
 `SetCookie` is defined as follows:

@@ -21,7 +21,7 @@ use crate::config::Config;
 use crate::requests::Request;
 use crate::error::*;
 
-type Page = fn(RequestData, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Option<Vec<u8>>;
+type Page = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Option<Vec<u8>>;
 
 pub async fn send_response<T>(stream: &mut T,
                               config: Option<&Config>,
@@ -394,6 +394,7 @@ pub fn get_current_date() -> String {
 
 pub fn page<'a>(page: &str,
                 request_data: RequestData<'a>,
+                request_headers: &HashMap<String, String>,
                 mut response_headers: &mut HashMap<String, String>,
                 mut set_cookie: &mut HashMap<String, SetCookie>,
                 config: &Config) -> Result<Option<Vec<u8>>, LibError>
@@ -402,7 +403,7 @@ pub fn page<'a>(page: &str,
         let page_symbol = String::from(page).replace("/", "::");
         let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;
         let p = lib.get::<Page>(page_symbol.as_bytes())?;
-        let content = p(request_data, &mut response_headers, &mut set_cookie);
+        let content = p(request_data, &request_headers, &mut response_headers, &mut set_cookie);
         lib.close()?;
 
         Ok(content)

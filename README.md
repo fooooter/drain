@@ -96,32 +96,35 @@ Each page should be a Rust module defined in a separate file, declared in lib.rs
 ```rust
 use std::collections::HashMap;
 use drain_common::RequestData::{self, *};
+use drain_common::cookies::SetCookie;
 use drain_macros::*;
 
 #[export_name = "index"]
 #[drain_page]
 pub fn index() -> Option<Vec<u8>> {
     let content: Vec<u8> = Vec::from(format!(r#"
-    <!DOCTYPE html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Index</title>
-        </head>
-        <body>
-            Hello, world! {} request was sent.
-        </body>
-    </html>"#, match request_data {
-        Get {..} => "GET",
-        Post {..} => "POST",
-        Head {..} => "HEAD"
+        <!DOCTYPE html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Index</title>
+            </head>
+            <body>
+                Hello, world! {} request was sent.
+            </body>
+        </html>"#, match request_data {
+        Get(_) => "GET",
+        Post(_) => "POST",
+        Head => "HEAD"
     }));
-
-    header!("Content-Type", "text/html; charset=utf-8");
-
+  
+    set_header!("Content-Type", "text/html; charset=utf-8");
+  
     Some(content)
 }
 ```
+
+Every variable mentioned below is always present in the scope.
 
 ### Naming convention
 
@@ -139,24 +142,45 @@ request headers and data specific to each variant.
 
 ```rust
 pub enum RequestData<'a> {
-    Get {params: &'a Option<HashMap<String, String>>, headers: &'a HashMap<String, String>},
-    Post {headers: &'a HashMap<String, String>, data: &'a Option<HashMap<String, String>>},
-    Head {headers: &'a HashMap<String, String>}
+    Get(&'a Option<HashMap<String, String>>),
+    Post(&'a Option<HashMap<String, String>>),
+    Head
 }
 ```
 
 POST `data` is an application/x-www-form-urlencoded string parsed to a HashMap and GET
-`params` are regular key-value pairs sent in the URL. `headers`, however is a HashMap containing every request header field.
+`params` are regular key-value pairs sent in the URL.
 
-### `response_headers`
+### Headers
 
-`response_headers` is a HashMap containing every header, that will be sent in response. It's a mutable reference,
+`response_headers` is a HashMap containing every header field, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
 changing content type to JSON, for example. `Content-Type` header must be set explicitly, otherwise an empty page will be returned.
-You should use the `header!` macro whenever possible.
+`request_headers`, however, is a HashMap containing every header field, that was sent along with the request by the client.
+You should use the `set_header!` and `header!` macros respectively, whenever possible.
+
+### Cookies
+
+To get a HashMap of all cookies, you can call the `cookies` function from `drain_common` crate.
+Cookies can be set by inserting a name of the cookie and a `SetCookie` struct into the `set_cookie` HashMap.
+
+`SetCookie` is defined as follows:
+```rust
+pub struct SetCookie {
+    pub value: String,
+    pub domain: Option<String>,
+    pub expires: Option<String>,
+    pub httponly: bool,
+    pub max_age: Option<u32>,
+    pub partitioned: bool,
+    pub path: Option<String>,
+    pub samesite: Option<SameSite>,
+    pub secure: bool
+}
+```
 
 ### Redirections
 
-Redirections are done once you append the `Location` or `location` header to `response_headers` in a dynamic page. 
+Redirections are done once you append the `Location` header to `response_headers` in a dynamic page. 
 It's up to you, whether a page should return content in redirection response or not, but it's preferred to 
-return `None` after specifying `Location` (or `location`). The status code is set by default to 302, but this will be changeable very soon.
+return `None` after specifying `Location`. The status code is set by default to 302, but this will be changeable very soon.

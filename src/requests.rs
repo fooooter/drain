@@ -109,7 +109,8 @@ where
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
         let content = page(
             if deny_action == 404 {"not_found"} else {"forbidden"},
-            Get {params: &None, headers},
+            Get(&None),
+            headers,
             &mut response_headers,
             &mut set_cookie,
             config);
@@ -135,7 +136,7 @@ where
 
     if config.dynamic_pages.contains(&resource) {
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = page(&*resource, Get {params, headers}, &mut response_headers, &mut set_cookie, config);
+        let content = page(&*resource, Get(params), headers, &mut response_headers, &mut set_cookie, config);
         let content_type = response_headers.get("content-type");
 
         match (content, content_type) {
@@ -202,7 +203,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = page("not_found", Get {params: &None, headers}, &mut response_headers, &mut set_cookie, config);
+            let content = page("not_found", Get(params), headers, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -249,7 +250,7 @@ where
 
     if config.dynamic_pages.contains(&resource) {
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        match page(&*resource, Head {headers}, &mut response_headers, &mut set_cookie, config) {
+        match page(&*resource, Head, headers, &mut response_headers, &mut set_cookie, config) {
             Ok(content) => {
                 if let Some(c) = content {
                     let content_length = c.len().to_string();
@@ -314,7 +315,8 @@ where
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
         let content = page(
             if deny_action == 404 {"not_found"} else {"forbidden"},
-            Post {data: &None, headers},
+            Post(&None),
+            headers,
             &mut response_headers,
             &mut set_cookie,
             config);
@@ -347,7 +349,7 @@ where
 
     if config.dynamic_pages.contains(&resource) {
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = page(&*resource, Post {data, headers}, &mut response_headers, &mut set_cookie, config);
+        let content = page(&*resource, Post(data), headers, &mut response_headers, &mut set_cookie, config);
         let content_type = response_headers.get("content-type");
 
         match (content, content_type) {
@@ -414,7 +416,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = page("not_found", Post {data: &data, headers}, &mut response_headers, &mut set_cookie, config);
+            let content = page("not_found", Post(data), headers, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {

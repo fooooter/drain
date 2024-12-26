@@ -145,13 +145,30 @@ request headers and data specific to each variant.
 ```rust
 pub enum RequestData<'a> {
     Get(&'a Option<HashMap<String, String>>),
-    Post(&'a Option<HashMap<String, String>>),
+    Post(&'a Option<RequestBody>),
     Head
 }
 ```
 
-POST `data` is an application/x-www-form-urlencoded string parsed to a HashMap and GET
-`params` are regular key-value pairs sent in the URL.
+POST body consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
+are `application/x-www-formurlencoded` and `multipart/form-data` represented by `XWWWFormUrlEncoded` and `FormData` `RequestBody` enum variants respectively.
+
+`FormDataValue` is a struct containing possible filename of the data segment and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
+in `XWWWFormUrlEncoded`, where binary data are encoded using URL encoding.
+
+```rust
+pub struct FormDataValue {
+    pub filename: Option<String>,
+    pub value: Vec<u8>
+}
+
+pub enum RequestBody {
+    XWWWFormUrlEncoded(HashMap<String, String>),
+    FormData(HashMap<String, FormDataValue>)
+}
+```
+
+GET params are regular key-value pairs sent in the URL represented by a HashMap.
 
 ### Headers
 

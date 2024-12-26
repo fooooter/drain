@@ -7,6 +7,8 @@ pub enum ServerError {
     InvalidStatusCode(u16),
     DecompressionError(IoError),
     UnsupportedEncoding,
+    UnsupportedMediaType,
+    MalformedPayload,
     InvalidRequest
 }
 
@@ -16,6 +18,8 @@ impl Display for ServerError {
             ServerError::InvalidStatusCode(status) => write!(f, "Invalid HTTP error status was provided to send_response(): {status}."),
             ServerError::DecompressionError(io_error) => write!(f, "An error occurred while decoding the payload: {io_error}."),
             ServerError::UnsupportedEncoding => write!(f, "Payload was encoded in an unsupported encoding."),
+            ServerError::UnsupportedMediaType => write!(f, "Payload contained data in an unsupported media type."),
+            ServerError::MalformedPayload => write!(f, "Payload contained malformed data."),
             ServerError::InvalidRequest => write!(f, "A request was malformed.")
         }
     }

@@ -15,7 +15,9 @@ use tokio::io::AsyncWriteExt;
 use bytes::BytesMut;
 use openssl::error::ErrorStack;
 use drain_common::cookies::{SetCookie, SameSite};
-use drain_common::RequestData;
+use drain_common::{FormDataValue, RequestBody, RequestData};
+use drain_common::RequestBody::{FormData, XWWWFormUrlEncoded};
+use bstr::ByteSlice;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::Config;
 use crate::requests::Request;
@@ -312,21 +314,20 @@ where
             panic!("Unrecoverable error occurred while handling connection.");
         }
 
-        let mut data_raw: Vec<u8> = Vec::new();
-        let data_processed;
+        let mut payload: Vec<u8> = Vec::new();
 
         match (headers.get("content-encoding"), config.get_supported_encodings()) {
             (Some(content_encoding), Some(supported_encodings))
             if supported_encodings.contains(content_encoding) => {
                 if content_encoding.eq("gzip") {
-                    if let Err(e) = GzDecoder::new(&*buffer).read_to_end(&mut data_raw) {
+                    if let Err(e) = GzDecoder::new(&*buffer).read_to_end(&mut payload) {
                         eprintln!("[receive_request():{}] An error occurred while decompressing the request body using GZIP:\n{e}\n\
                                     Sending 406 status to the client...", line!());
 
                         return Err(ServerError::DecompressionError(e));
                     }
                 } else if content_encoding.eq("br") {
-                    if let Err(e) = BrotliDecompress(&mut &*buffer, &mut data_raw) {
+                    if let Err(e) = BrotliDecompress(&mut &*buffer, &mut payload) {
                         eprintln!("[receive_request():{}] An error occurred while decompressing the request body using GZIP:\n{e}\n\
                                     Sending 406 status to the client...", line!());
 
@@ -335,8 +336,6 @@ where
                 } else {
                     return Err(ServerError::UnsupportedEncoding);
                 }
-
-                data_processed = String::from_utf8_lossy(&data_raw).to_string();
             }
             (Some(content_encoding), Some(supported_encodings))
             if !supported_encodings.contains(content_encoding) => {
@@ -346,19 +345,92 @@ where
                 return Err(ServerError::UnsupportedEncoding);
             },
             _ => {
-                data_processed = String::from_utf8_lossy(&buffer).to_string();
+                payload = buffer.to_vec();
             }
         }
 
-        let mut data_hm: HashMap<String, String> = HashMap::new();
-        for kv in data_processed.split('&') {
-            let kv_split = kv.split_once('=').unwrap();
-            if let Some(_) = &data_hm.insert(String::from(kv_split.0), String::from(kv_split.1)) {
-                return Err(ServerError::UnsupportedEncoding);
+        let body: RequestBody;
+
+        match headers.get("content-type") {
+            Some(content_type) if content_type.starts_with("application/x-www-formurlencoded") => {
+                let x_www_urlencoded_raw = String::from(String::from_utf8_lossy(&payload));
+                let mut body_hm: HashMap<String, String> = HashMap::new();
+                for kv in x_www_urlencoded_raw.split('&') {
+                    let Some(kv_split) = kv.split_once('=') else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+                    if let Some(_) = &body_hm.insert(String::from(kv_split.0), String::from(kv_split.1)) {
+                        return Err(ServerError::MalformedPayload);
+                    }
+                }
+                body = XWWWFormUrlEncoded(body_hm);
+            },
+            Some(content_type) => {
+                let Some((content_type, boundary_raw)) = content_type.split_once(';') else {
+                    return Err(ServerError::MalformedPayload);
+                };
+
+                if !content_type.trim_end().eq("multipart/form-data") {
+                    return Err(ServerError::MalformedPayload);
+                }
+
+                let Some((_, bound)) = boundary_raw.trim_end_matches(';').split_once('=') else {
+                    return Err(ServerError::MalformedPayload);
+                };
+                let bound = bound.trim_matches(|y| y == '"');
+
+                let mut body_hm: HashMap<String, FormDataValue> = HashMap::new();
+
+                for field in payload.split_str(&*format!("--{bound}", )).skip(1) {
+                    if field.trim_ascii().eq(&[45, 45]) {
+                        break;
+                    }
+
+                    let mut field_lines = field.split_str("\r\n").skip(1);
+                    let (Some(content_disp), Some(blank_line), Some(field_data)) = (field_lines.next(), field_lines.next(), field_lines.next()) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    let Some((_, content_disp_val)) = content_disp.split_once_str(":") else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    let mut content_disp_val = content_disp_val.split_str(";");
+                    let (Some(form_data), Some(name)) = (content_disp_val.next(), content_disp_val.next()) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    if !String::from_utf8_lossy(form_data).trim_start().eq("form-data") || !blank_line.trim_ascii().is_empty() {
+                        return Err(ServerError::MalformedPayload);
+                    }
+
+                    let Some((_, name)) = name.split_once_str("=") else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    let v = FormDataValue {
+                        filename: if let Some(filename) = content_disp_val.next() {
+                            let Some((_, filename)) = filename.split_once_str("=") else {
+                                return Err(ServerError::MalformedPayload);
+                            };
+
+                            Some(String::from(String::from_utf8_lossy(filename).trim_matches('"')))
+                        } else {
+                            None
+                        },
+                        value: Vec::from(field_data)
+                    };
+
+                    body_hm.insert(String::from(String::from_utf8_lossy(name).trim_matches('"')), v);
+                }
+                body = FormData(body_hm);
+            },
+            _ => {
+                return Err(ServerError::UnsupportedMediaType);
             }
         }
 
-        *data = Some(data_hm);
+        *data = Some(body);
     }
     Ok(request)
 }

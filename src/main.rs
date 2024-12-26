@@ -18,6 +18,7 @@ use crate::requests::*;
 use crate::util::*;
 use crate::config::Config;
 use crate::error::ServerError;
+use crate::pages::internal_server_error::internal_server_error;
 
 fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     let server_root = &config.server_root;
@@ -78,10 +79,24 @@ where
             }
         },
         Err(e) => {
-            if let ServerError::DecompressionError(..) = e {
-                send_response(&mut stream, Some(config), 406, None, None, None).await?;
-            } else {
-                send_response(&mut stream, Some(config), 400, None, None, None).await?;
+            match e {
+                ServerError::DecompressionError(..) | ServerError::UnsupportedEncoding => {
+                    send_response(&mut stream, Some(config), 406, None, None, None).await?
+                },
+                ServerError::InvalidRequest | ServerError::MalformedPayload => {
+                    send_response(&mut stream, Some(config), 400, None, None, None).await?
+                },
+                ServerError::UnsupportedMediaType => {
+                    let response_headers: HashMap<String, String> = HashMap::from([
+                        (String::from("Accept-Post"), String::from("application/x-www-form-urlencoded, multipart/form-data")),
+                        (String::from("Vary"), String::from("Content-Type"))
+                    ]);
+
+                    send_response(&mut stream, Some(config), 415, Some(response_headers), None, None).await?
+                }
+                _ => {
+                    internal_server_error(&mut stream).await?;
+                }
             }
             Err(Box::new(e))
         }

@@ -9,19 +9,20 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::util::*;
 use crate::config::Config;
 use crate::error::ServerError;
+use drain_common::RequestBody;
 use drain_common::RequestData::{*};
 use drain_common::cookies::SetCookie;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
     Head {resource: String, headers: HashMap<String, String>},
-    Post {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
-    Put {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
+    Post {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
+    Put {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
     Delete {resource: String, headers: HashMap<String, String>},
     Connect {resource: String, headers: HashMap<String, String>},
     Options {resource: String, headers: HashMap<String, String>},
     Trace {resource: String, headers: HashMap<String, String>},
-    Patch {resource: String, headers: HashMap<String, String>, data: Option<HashMap<String, String>>},
+    Patch {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
 }
 
 impl Request {
@@ -293,7 +294,7 @@ where
     }
 }
 
-pub async fn handle_post<T>(mut stream: T, config: &Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_post<T>(mut stream: T, config: &Config, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -338,13 +339,6 @@ where
             return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
         }
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
-    }
-
-    if !headers.get("content-type").unwrap_or(&String::from("application/x-www-form-urlencoded")).eq("application/x-www-form-urlencoded") {
-        response_headers.insert(String::from("Accept-Post"), String::from("application/x-www-form-urlencoded"));
-        response_headers.insert(String::from("Vary"), String::from("Content-Type"));
-
-        return send_response(&mut stream, Some(config), 415, Some(response_headers), None, None).await;
     }
 
     if config.dynamic_pages.contains(&resource) {

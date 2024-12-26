@@ -19,5 +19,5 @@ flate2 = "1.0.34"
 brotli = "7.0.0"
 libloading = "0.8.5"
 bytes = "1.8.0"
-drain_common = { path = "../drain_common" }
 bstr = "1.11.1"
+drain_common = { git = "https://github.com/fooooter/drain_common" }

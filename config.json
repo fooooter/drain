@@ -1,8 +1,7 @@
 {
   "global_response_headers": {
     "Connection": "keep-alive",
-    "Keep-Alive": "timeout=5, max=100",
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains"
+    "Keep-Alive": "timeout=5, max=100"
   },
   "access_control": {
     "deny_action": 404,
@@ -14,8 +13,7 @@
   "bind_host": "127.0.0.1",
   "bind_port": "80",
   "dynamic_pages": [
-    "login",
-    "register"
+    "index"
   ],
   "dynamic_pages_library": "libdynamic_pages.so",
   "encoding": {

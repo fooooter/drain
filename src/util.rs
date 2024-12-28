@@ -352,7 +352,7 @@ where
         let body: RequestBody;
 
         match headers.get("content-type") {
-            Some(content_type) if content_type.starts_with("application/x-www-formurlencoded") => {
+            Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded") => {
                 let x_www_urlencoded_raw = String::from(String::from_utf8_lossy(&payload));
                 let mut body_hm: HashMap<String, String> = HashMap::new();
                 for kv in x_www_urlencoded_raw.split('&') {
@@ -370,8 +370,8 @@ where
                     return Err(ServerError::MalformedPayload);
                 };
 
-                if !content_type.trim_end().eq("multipart/form-data") {
-                    return Err(ServerError::MalformedPayload);
+                if !content_type.trim_end().starts_with("multipart/form-data") {
+                    return Err(ServerError::UnsupportedMediaType);
                 }
 
                 let Some((_, bound)) = boundary_raw.trim_end_matches(';').split_once('=') else {
@@ -381,7 +381,7 @@ where
 
                 let mut body_hm: HashMap<String, FormDataValue> = HashMap::new();
 
-                for field in payload.split_str(&*format!("--{bound}", )).skip(1) {
+                for field in payload.split_str(&*format!("--{bound}")).skip(1) {
                     if field.trim_ascii().eq(&[45, 45]) {
                         break;
                     }

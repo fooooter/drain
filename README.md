@@ -151,7 +151,7 @@ pub enum RequestData<'a> {
 ```
 
 POST body consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
-are `application/x-www-formurlencoded` and `multipart/form-data` represented by `XWWWFormUrlEncoded` and `FormData` `RequestBody` enum variants respectively.
+are `application/x-www-form-urlencoded` and `multipart/form-data` represented by `XWWWFormUrlEncoded` and `FormData` `RequestBody` enum variants respectively.
 
 `FormDataValue` is a struct containing possible filename of the data segment and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
 in `XWWWFormUrlEncoded`, where binary data are encoded using URL encoding.

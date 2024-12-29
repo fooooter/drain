@@ -12,12 +12,12 @@ use openssl::base64;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use tokio::io::AsyncWriteExt;
+use bstr::ByteSlice;
 use bytes::BytesMut;
 use openssl::error::ErrorStack;
 use drain_common::cookies::{SetCookie, SameSite};
 use drain_common::{FormDataValue, RequestBody, RequestData};
 use drain_common::RequestBody::{FormData, XWWWFormUrlEncoded};
-use bstr::ByteSlice;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::Config;
 use crate::requests::Request;
@@ -359,7 +359,12 @@ where
                     let Some(kv_split) = kv.split_once('=') else {
                         return Err(ServerError::MalformedPayload);
                     };
-                    if let Some(_) = &body_hm.insert(String::from(kv_split.0), String::from(kv_split.1)) {
+
+                    let (Ok(name_decoded), Ok(value_decoded)) = (urlencoding::decode(kv_split.0), urlencoding::decode(kv_split.1)) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    if let Some(_) = &body_hm.insert(name_decoded.into_owned(), value_decoded.into_owned()) {
                         return Err(ServerError::MalformedPayload);
                     }
                 }

@@ -20,6 +20,11 @@
 Dynamic pages are generated inside a dynamic library, so that it's easy to create them without modifying
 the core and recompiling the server only to change one thing on a page.
 
+## OS compatibility
+
+Drain should work properly under every POSIX-compatible OS like Linux (under which it has been tested on primarily), BSDs and macOS.
+On Windows it works properly unless you have to use the SSL.
+
 ## Build
 
 To build Drain, run `cargo build` in the root of a source.

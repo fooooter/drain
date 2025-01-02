@@ -1,3 +1,5 @@
+[![crates.io](https://img.shields.io/badge/crates.io-v0.6.7-darkblue)](https://crates.io/crates/drain_server)
+
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
 [✔]   	OPTIONS<br>

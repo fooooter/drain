@@ -1,5 +1,5 @@
 [package]
-name = "drain"
+name = "drain_server"
 description = "A WIP web server."
 version = "0.6.5"
 edition = "2021"

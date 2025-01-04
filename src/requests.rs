@@ -99,7 +99,7 @@ where
 
     if resource.is_empty() {
         resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("{document_root}/index.html")
+            format!("/index.html")
         } else {
             String::from("index")
         };
@@ -238,7 +238,7 @@ where
 
     if resource.is_empty() {
         resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("{document_root}/index.html")
+            format!("/index.html")
         } else {
             String::from("index")
         };
@@ -305,7 +305,7 @@ where
 
     if resource.is_empty() {
         resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("{document_root}/index.html")
+            format!("/index.html")
         } else {
             String::from("index")
         };

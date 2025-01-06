@@ -33,10 +33,10 @@ pub struct Https {
 #[derive(Deserialize)]
 pub struct Config {
     pub global_response_headers: HashMap<String, String>,
-    pub access_control: AccessControl,
+    pub access_control: Option<AccessControl>,
     pub bind_host: String,
     pub bind_port: String,
-    pub dynamic_pages: Vec<String>,
+    pub dynamic_pages: Option<Vec<String>>,
     pub dynamic_pages_library: String,
     pub encoding: Encoding,
     pub document_root: String,
@@ -94,31 +94,33 @@ impl Config {
     where
         T: AsyncRead + AsyncWrite + Unpin
     {
-        for (k, v) in &self.access_control.list {
-            if let Ok(paths) = glob(&*k) {
-                for entry in paths.filter_map(Result::ok) {
-                    if entry.to_string_lossy().eq(resource) {
-                        if v.eq("deny") {
-                            return false;
-                        }
-
-                        if !v.eq("allow") {
-                            eprintln!("[is_access_allowed():{}] A critical server config file is malformed.\n\
-                                        Error information:\n\
-                                        invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
-                                        Attempting to send Internal Server Error page to the client...", line!());
-
-                            if let Err(e) = internal_server_error(stream).await {
-                                eprintln!("[is_access_allowed():{}] FAILED. Error information: {e}", line!());
+        if let Some(access_control) = &self.access_control {
+            for (k, v) in &access_control.list {
+                if let Ok(paths) = glob(&*format!("{}/{k}", &self.document_root)) {
+                    for entry in paths.filter_map(Result::ok) {
+                        if entry.to_string_lossy().eq(&*format!("{}/{resource}", &self.document_root)) {
+                            if v.eq("deny") {
+                                return false;
                             }
-                            eprintln!("Attempting to close connection...");
-                            if let Err(e) = stream.shutdown().await {
-                                eprintln!("[is_access_allowed():{}] FAILED. Error information:\n{e}", line!());
-                            }
-                            panic!("Unrecoverable error occurred trying to set up connection.");
-                        }
 
-                        return true;
+                            if !v.eq("allow") {
+                                eprintln!("[is_access_allowed():{}] A critical server config file is malformed.\n\
+                                            Error information:\n\
+                                            invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
+                                            Attempting to send Internal Server Error page to the client...", line!());
+
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[is_access_allowed():{}] FAILED. Error information: {e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[is_access_allowed():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred trying to set up connection.");
+                            }
+
+                            return true;
+                        }
                     }
                 }
             }
@@ -155,7 +157,11 @@ impl Config {
     }
 
     pub fn get_deny_action(&self) -> u16 {
-        let deny_action = (&self.access_control.deny_action).clone();
+        let Some(access_control) = &self.access_control else {
+            return 404;
+        };
+
+        let deny_action = access_control.deny_action.clone();
         if deny_action != 403 && deny_action != 404 {
             return 404
         }

@@ -99,7 +99,7 @@ where
 
     if resource.is_empty() {
         resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("/index.html")
+            format!("index.html")
         } else {
             String::from("index")
         };
@@ -135,44 +135,46 @@ where
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
     }
 
-    if config.dynamic_pages.contains(&resource) {
-        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = page(&*resource, Get(params), headers, &mut response_headers, &mut set_cookie, config);
-        let content_type = response_headers.get("content-type");
+    if let Some(dynamic_pages) = &config.dynamic_pages {
+        if dynamic_pages.contains(&resource) {
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let content = page(&*resource, Get(params), headers, &mut response_headers, &mut set_cookie, config);
+            let content_type = response_headers.get("content-type");
 
-        match (content, content_type) {
-            (Ok(Some(c)), Some(c_t)) => {
-                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                    (mime.to_string(), mime.type_().to_string())
-                } else {
-                    response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await
-                };
+            match (content, content_type) {
+                (Ok(Some(c)), Some(c_t)) => {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await
+                    };
 
-                if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                }
+                    if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
 
-                if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c), Some(set_cookie)).await;
-                }
+                    if response_headers.contains_key("location") {
+                        return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c), Some(set_cookie)).await;
+                    }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c), Some(set_cookie)).await;
-            },
-            (Ok(None), _) | (Ok(Some(_)), None) => {
-                if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
-                }
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c), Some(set_cookie)).await;
+                },
+                (Ok(None), _) | (Ok(Some(_)), None) => {
+                    if response_headers.contains_key("location") {
+                        return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
+                    }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
-            },
-            (Err(e), _) => {
-                match e {
-                    LibError::DlSym {..} => {},
-                    _ => {
-                        eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
-                        return Err(Box::new(e));
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
+                },
+                (Err(e), _) => {
+                    match e {
+                        LibError::DlSym { .. } => {},
+                        _ => {
+                            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
+                            return Err(Box::new(e));
+                        }
                     }
                 }
             }
@@ -238,7 +240,7 @@ where
 
     if resource.is_empty() {
         resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("/index.html")
+            format!("index.html")
         } else {
             String::from("index")
         };
@@ -249,27 +251,29 @@ where
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, None).await;
     }
 
-    if config.dynamic_pages.contains(&resource) {
-        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        match page(&*resource, Head, headers, &mut response_headers, &mut set_cookie, config) {
-            Ok(content) => {
-                if let Some(c) = content {
-                    let content_length = c.len().to_string();
-                    response_headers.insert(String::from("Content-Length"), content_length);
-                }
+    if let Some(dynamic_pages) = &config.dynamic_pages {
+        if dynamic_pages.contains(&resource) {
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            match page(&*resource, Head, headers, &mut response_headers, &mut set_cookie, config) {
+                Ok(content) => {
+                    if let Some(c) = content {
+                        let content_length = c.len().to_string();
+                        response_headers.insert(String::from("Content-Length"), content_length);
+                    }
 
-                if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
-                }
+                    if response_headers.contains_key("location") {
+                        return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
+                    }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
-            },
-            Err(e) => {
-                match e {
-                    LibError::DlSym {..} => {},
-                    _ => {
-                        eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
-                        return Err(Box::new(e));
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
+                },
+                Err(e) => {
+                    match e {
+                        LibError::DlSym { .. } => {},
+                        _ => {
+                            eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
+                            return Err(Box::new(e));
+                        }
                     }
                 }
             }
@@ -305,7 +309,7 @@ where
 
     if resource.is_empty() {
         resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("/index.html")
+            format!("index.html")
         } else {
             String::from("index")
         };
@@ -341,44 +345,46 @@ where
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
     }
 
-    if config.dynamic_pages.contains(&resource) {
-        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = page(&*resource, Post(data), headers, &mut response_headers, &mut set_cookie, config);
-        let content_type = response_headers.get("content-type");
+    if let Some(dynamic_pages) = &config.dynamic_pages {
+        if dynamic_pages.contains(&resource) {
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let content = page(&*resource, Post(data), headers, &mut response_headers, &mut set_cookie, config);
+            let content_type = response_headers.get("content-type");
 
-        match (content, content_type) {
-            (Ok(Some(c)), Some(c_t)) => {
-                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                    (mime.to_string(), mime.type_().to_string())
-                } else {
-                    response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await
-                };
+            match (content, content_type) {
+                (Ok(Some(c)), Some(c_t)) => {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await
+                    };
 
-                if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                }
+                    if let Some(encoding) = config.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
 
-                if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c), Some(set_cookie)).await;
-                }
+                    if response_headers.contains_key("location") {
+                        return send_response(&mut stream, Some(config), 302, Some(response_headers), Some(c), Some(set_cookie)).await;
+                    }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c), Some(set_cookie)).await;
-            },
-            (Ok(None), _) | (Ok(Some(_)), None) => {
-                if response_headers.contains_key("location") {
-                    return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
-                }
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), Some(c), Some(set_cookie)).await;
+                },
+                (Ok(None), _) | (Ok(Some(_)), None) => {
+                    if response_headers.contains_key("location") {
+                        return send_response(&mut stream, Some(config), 302, Some(response_headers), None, Some(set_cookie)).await;
+                    }
 
-                return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
-            },
-            (Err(e), _) => {
-                match e {
-                    LibError::DlSym {..} => {},
-                    _ => {
-                        eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
-                        return Err(Box::new(e));
+                    return send_response(&mut stream, Some(config), 200, Some(response_headers), None, Some(set_cookie)).await;
+                },
+                (Err(e), _) => {
+                    match e {
+                        LibError::DlSym { .. } => {},
+                        _ => {
+                            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
+                            return Err(Box::new(e));
+                        }
                     }
                 }
             }

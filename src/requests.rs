@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::collections::HashMap;
+use std::path::Path;
 use std::str::FromStr;
 use tokio::fs::*;
 use regex::*;
@@ -12,6 +13,7 @@ use crate::error::ServerError;
 use drain_common::RequestBody;
 use drain_common::RequestData::{*};
 use drain_common::cookies::SetCookie;
+use crate::pages::index_of::index_of;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -97,12 +99,22 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if resource.is_empty() {
-        resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("index.html")
+    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
+            format!("{resource}/index.html")
         } else {
-            String::from("index")
+            format!("{resource}/index")
         };
+
+        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+            return index_of(&mut stream, config, &resource, false).await;
+        }
+
+        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+            return index_of(&mut stream, config, &resource, false).await;
+        }
+
+        resource = res_tmp;
     }
 
     if !config.is_access_allowed(&resource, &mut stream).await {
@@ -238,12 +250,22 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if resource.is_empty() {
-        resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("index.html")
+    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
+            format!("{resource}/index.html")
         } else {
-            String::from("index")
+            format!("{resource}/index")
         };
+
+        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+            return index_of(&mut stream, config, &resource, true).await;
+        }
+
+        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+            return index_of(&mut stream, config, &resource, true).await;
+        }
+
+        resource = res_tmp;
     }
 
     if !config.is_access_allowed(&resource, &mut stream).await {
@@ -307,12 +329,22 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if resource.is_empty() {
-        resource = if let Ok(_) = File::open(format!("{document_root}/index.html")).await {
-            format!("index.html")
+    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
+            format!("{resource}/index.html")
         } else {
-            String::from("index")
+            format!("{resource}/index")
         };
+
+        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+            return index_of(&mut stream, config, &resource, false).await;
+        }
+
+        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+            return index_of(&mut stream, config, &resource, false).await;
+        }
+
+        resource = res_tmp;
     }
 
     if !config.is_access_allowed(&resource, &mut stream).await {

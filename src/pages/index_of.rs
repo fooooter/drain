@@ -43,7 +43,7 @@ where
                 {directory_list}
             </ul>
             <hr>
-            <small>Drain 0.7.1</small>
+            <small>Drain 0.8.0</small>
         </body>
     </html>
     "#));

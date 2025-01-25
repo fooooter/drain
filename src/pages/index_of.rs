@@ -5,10 +5,11 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::config::Config;
 use crate::util::send_response;
 
-pub async fn index_of<T>(mut stream: &mut T, config: &Config, directory: &String, head: bool) -> Result<(), Box<dyn Error>>
+pub async fn index_of<T>(mut stream: &mut T, config: &Config, mut directory: &String, head: bool) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    directory.remove(0);
     let document_root = &config.document_root;
 
     let mut directory_list = String::new();

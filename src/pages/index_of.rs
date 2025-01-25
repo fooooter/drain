@@ -43,10 +43,10 @@ where
                 {directory_list}
             </ul>
             <hr>
-            <small>Drain 0.8.0</small>
+            <small>Drain {}</small>
         </body>
     </html>
-    "#));
+    "#, env!("CARGO_PKG_VERSION")));
 
     let mut response_headers = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
 

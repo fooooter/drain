@@ -15,18 +15,15 @@ where
     for dir in read_dir(format!("{document_root}/{directory}"))? {
         let dir = dir?;
         let path = dir.path();
-        let mut path_str = String::from(path.to_string_lossy());
-        path_str.remove(0);
-        let path_split = path_str.split_once("/");
-        let Some((_, path_str)) = path_split else {
-            break;
-        };
+        let path_str = String::from(path.to_string_lossy());
+        let mut path_trim = path_str.trim_start_matches(document_root);
+        path_trim = path_trim.trim_start_matches('/');
 
-        if !config.is_access_allowed(&String::from(path_str), stream).await {
+        if !config.is_access_allowed(&String::from(path_trim), stream).await {
             continue;
         }
 
-        directory_list.push_str(&*format!("<li><a href={path_str}>{path_str}</a></li>"));
+        directory_list.push_str(&*format!("<li><a href={path_trim}>{path_trim}</a></li>"));
     }
 
     let content: Vec<u8> = Vec::from(format!(r#"

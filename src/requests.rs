@@ -107,11 +107,11 @@ where
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(&mut stream, config, &resource, false).await;
+            return index_of(&mut stream, config, resource, false).await;
         }
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            return index_of(&mut stream, config, &resource, false).await;
+            return index_of(&mut stream, config, resource, false).await;
         }
 
         resource = res_tmp;
@@ -258,11 +258,11 @@ where
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(&mut stream, config, &resource, true).await;
+            return index_of(&mut stream, config, resource, true).await;
         }
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            return index_of(&mut stream, config, &resource, true).await;
+            return index_of(&mut stream, config, resource, true).await;
         }
 
         resource = res_tmp;
@@ -337,11 +337,11 @@ where
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(&mut stream, config, &resource, false).await;
+            return index_of(&mut stream, config, resource, false).await;
         }
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            return index_of(&mut stream, config, &resource, false).await;
+            return index_of(&mut stream, config, resource, false).await;
         }
 
         resource = res_tmp;

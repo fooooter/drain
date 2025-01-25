@@ -11,12 +11,12 @@ where
 {
     let document_root = &config.document_root;
 
-    directory.remove(0);
     let mut directory_list = String::new();
     for dir in read_dir(format!("{document_root}/{directory}"))? {
         let dir = dir?;
         let path = dir.path();
-        let path_str = path.to_string_lossy();
+        let mut path_str = String::from(path.to_string_lossy());
+        path_str.remove(0);
         let path_split = path_str.split_once("/");
         let Some((_, path_str)) = path_split else {
             break;

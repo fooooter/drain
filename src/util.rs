@@ -107,7 +107,11 @@ where
     response.push_str(&*date_header);
 
     let global_response_headers = if let Some(c) = config {
-        c.global_response_headers.clone()
+        if let Some(global_response_headers) = &c.global_response_headers {
+            global_response_headers.clone()
+        } else {
+            HashMap::from([(String::from("Connection"), String::from("close"))])
+        }
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };

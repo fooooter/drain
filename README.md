@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v0.8.0-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.8.5-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -54,7 +54,7 @@ Currently available fields are:
   * `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
   * `encoding_applicable_mime_types` - a list of media types to which encoding should be applied. It's best to leave this setting as is.
 - `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
-- `server_root` - a directory in which server data are kept, like, for example, key-pairs.
+- `server_root` - a directory in which server data are kept, like, for example, key-pairs for SSL.
 - `https`:
   * `enabled` - enable HTTPS.
   * `bind_port` - bind port to the server (HTTPS). If you want to use 443, be sure to start the server as root or another privileged user.
@@ -84,6 +84,7 @@ Currently available fields are:
   The certificate must match the private key and a path to it must be relative to the `server_root`.
 
 Drain must be restarted in order for changes to take effect.
+Currently, the optional fields are: `access_control`, `global_response_headers`, `dynamic_pages`, `min_protocol_version`.
 
 ## Usage
 

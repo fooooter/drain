@@ -32,7 +32,7 @@ pub struct Https {
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub global_response_headers: HashMap<String, String>,
+    pub global_response_headers: Option<HashMap<String, String>>,
     pub access_control: Option<AccessControl>,
     pub bind_host: String,
     pub bind_port: String,

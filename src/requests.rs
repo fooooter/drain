@@ -2,6 +2,7 @@ use std::error::Error;
 use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
+use bstr::ByteSlice;
 use tokio::fs::*;
 use regex::*;
 use libloading::Error as LibError;
@@ -204,7 +205,11 @@ where
             let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
                 (guess.to_string(), guess.type_().to_string())
             } else {
-                (String::from("application/octet-stream"), String::from("application"))
+                if content.is_utf8() {
+                    (String::from("text/plain"), String::from("text"))
+                } else {
+                    (String::from("application/octet-stream"), String::from("application"))
+                }
             };
 
             if let Some(encoding) = config.get_response_encoding(&content, &guess, &general_type, headers) {
@@ -434,7 +439,11 @@ where
             let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
                 (guess.to_string(), guess.type_().to_string())
             } else {
-                (String::from("application/octet-stream"), String::from("application"))
+                if content.is_utf8() {
+                    (String::from("text/plain"), String::from("text"))
+                } else {
+                    (String::from("application/octet-stream"), String::from("application"))
+                }
             };
 
             if let Some(encoding) = config.get_response_encoding(&content, &guess, &general_type, headers) {

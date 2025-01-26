@@ -52,6 +52,7 @@ impl Config {
         match &config_path {
             Ok(c_f) => {
                 config_file = File::open(c_f).await;
+                println!("Config path: {c_f}");
             }
             Err(e) => {
                 eprintln!("[Config::new():{}] A critical server config file wasn't found.\n\

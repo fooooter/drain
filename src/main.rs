@@ -105,12 +105,25 @@ where
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    println!("Drain {}, starting...", env!("CARGO_PKG_VERSION"));
     let config = Arc::new(Config::new().await);
+
+    let encoding_enabled = (&config.encoding.enabled).clone();
+    let encoding = &config.encoding.use_encoding;
     let https_enabled = (&config.https.enabled).clone();
     let bind_host = &config.bind_host;
 
+    println!("Encoding {}.", if encoding_enabled {
+        format!("enabled and set to \"{encoding}\"")
+    } else {
+        String::from("disabled")
+    });
+
     if https_enabled {
-        let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.https.bind_port)).await?;
+        println!("SSL enabled.");
+        let bind_port = &config.https.bind_port;
+        let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
+        println!("Listening on {}:{}", bind_host, bind_port);
         loop {
             let config = config.clone();
 
@@ -145,7 +158,10 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    let listener = TcpListener::bind(format!("{}:{}", bind_host, &config.bind_port)).await?;
+    println!("SSL disabled.");
+    let bind_port = &config.bind_port;
+    let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
+    println!("Listening on {}:{}", bind_host, bind_port);
     loop {
         let config = config.clone();
 

@@ -102,12 +102,10 @@ Stick to the macro library if possible - https://github.com/fooooter/drain_macro
 Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
 
 ```rust
-use std::collections::HashMap;
 use drain_common::RequestData::*;
 use drain_macros::*;
 
-#[export_name = "index"]
-#[drain_page]
+#[drain_endpoint("index")]
 pub fn index() {
     let content: Vec<u8> = Vec::from(format!(r#"
         <!DOCTYPE html>
@@ -131,19 +129,15 @@ pub fn index() {
 }
 ```
 
-Every variable mentioned below is always present in the scope.
+Every variable referenced below is always present in the scope.
 Though, async is not present in the function definition, the entire scope is asynchronous and every `Future` inside can be awaited.
 It's using a Tokio runtime, so if you decide to import SQLx or other asynchronous crate, go ahead and specify Tokio in "features" in Cargo.toml.
 The dynamic page ALWAYS returns `Option<Vec<u8>>`, no matter what you specify as a return type (it'll be ignored and `Option<Vec<u8>>` will be used regardless).
 
-### Naming convention
-
-You can name these pages however you like, but keep in mind there's a naming convention.
-`::` is a separator, which simulates a directory structure (it's equivalent to `/`, but for the sake of being accepted by the linker
-unlike `/`, it was used instead of that). Don't worry, in config.json and in URL bar, it's still `/`, but it's converted to `::` automatically
-by the server. At first, it can be easily confused with module paths, but take `app::login` as an example. In this case, 
-`app` corresponds to a module, in which a submodule `login` containing a function (page) `login` resides, but as the page is named identically
-to the module it resides in, it's just `app::login` instead of `app::login::login`. It's equivalent to the following resource specifier: `app/login`.
+It's also possible to simulate directory structure using this `drain_endpoint` macro. 
+Instead of `#[drain_endpoint("index")]` you can, for example, specify `#[drain_endpoint("settings/index")]`.
+It will correspond to `/settings/index` URL path. Furthermore, the effect will be the same when you specify `/settings` in the URL.
+Keep in mind you'd have to specify `settings/index` inside `dynamic_pages` field in config.json.
 
 ### RequestData
 

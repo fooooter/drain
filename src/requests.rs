@@ -100,24 +100,6 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
-        };
-
-        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(&mut stream, config, resource, false).await;
-        }
-
-        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            return index_of(&mut stream, config, resource, false).await;
-        }
-
-        resource = res_tmp;
-    }
-
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
@@ -146,6 +128,31 @@ where
             return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
         }
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
+    }
+
+    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index")).await {
+            format!("{resource}/index")
+        } else {
+            format!("{resource}/index.html")
+        };
+
+        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+            return index_of(&mut stream, config, resource, false).await;
+        }
+
+        let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+            match &config.dynamic_pages {
+                Some(dynamic_pages) if dynamic_pages.contains(&res_tmp_trim) => {},
+                _ => {
+                    return index_of(&mut stream, config, resource, false).await;
+                }
+            }
+        }
+
+        resource = res_tmp_trim;
     }
 
     if let Some(dynamic_pages) = &config.dynamic_pages {
@@ -255,11 +262,16 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
+    if !config.is_access_allowed(&resource, &mut stream).await {
+        let deny_action = config.get_deny_action();
+        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, None).await;
+    }
+
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
-            format!("{resource}/index.html")
-        } else {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index")).await {
             format!("{resource}/index")
+        } else {
+            format!("{resource}/index.html")
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
@@ -267,15 +279,16 @@ where
         }
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            return index_of(&mut stream, config, resource, true).await;
+            match &config.dynamic_pages {
+                Some(dynamic_pages) if dynamic_pages.contains(&String::from("index")) ||
+                    dynamic_pages.contains(&String::from("index.html")) => {},
+                _ => {
+                    return index_of(&mut stream, config, resource, true).await;
+                }
+            }
         }
 
         resource = res_tmp;
-    }
-
-    if !config.is_access_allowed(&resource, &mut stream).await {
-        let deny_action = config.get_deny_action();
-        return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, None).await;
     }
 
     if let Some(dynamic_pages) = &config.dynamic_pages {
@@ -334,24 +347,6 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
-        };
-
-        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(&mut stream, config, resource, false).await;
-        }
-
-        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            return index_of(&mut stream, config, resource, false).await;
-        }
-
-        resource = res_tmp;
-    }
-
     if !config.is_access_allowed(&resource, &mut stream).await {
         let deny_action = config.get_deny_action();
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
@@ -380,6 +375,30 @@ where
             return send_response(&mut stream, Some(config), deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
         }
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, Some(set_cookie)).await
+    }
+
+    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index")).await {
+            format!("{resource}/index")
+        } else {
+            format!("{resource}/index.html")
+        };
+
+        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+            return index_of(&mut stream, config, resource, false).await;
+        }
+
+        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+            match &config.dynamic_pages {
+                Some(dynamic_pages) if dynamic_pages.contains(&String::from("index")) ||
+                    dynamic_pages.contains(&String::from("index.html")) => {},
+                _ => {
+                    return index_of(&mut stream, config, resource, false).await;
+                }
+            }
+        }
+
+        resource = res_tmp;
     }
 
     if let Some(dynamic_pages) = &config.dynamic_pages {

@@ -3,8 +3,7 @@ use std::env;
 use glob::glob;
 use serde::Deserialize;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use crate::pages::internal_server_error::internal_server_error;
+use tokio::io::AsyncReadExt;
 
 #[derive(Deserialize)]
 pub struct AccessControl {
@@ -14,10 +13,9 @@ pub struct AccessControl {
 
 #[derive(Deserialize)]
 pub struct Encoding {
-    pub enabled: bool,
-    pub supported_encodings: Vec<String>,
     pub use_encoding: String,
-    pub encoding_applicable_mime_types: Vec<String>
+    pub supported_encodings: Vec<String>,
+    pub encoding_applicable_mime_types: Option<Vec<String>>
 }
 
 #[derive(Deserialize)]
@@ -36,9 +34,9 @@ pub struct Config {
     pub access_control: Option<AccessControl>,
     pub bind_host: String,
     pub bind_port: String,
-    pub dynamic_pages: Option<Vec<String>>,
-    pub dynamic_pages_library: String,
-    pub encoding: Encoding,
+    pub endpoints: Option<Vec<String>>,
+    pub endpoints_library: String,
+    pub encoding: Option<Encoding>,
     pub document_root: String,
     pub server_root: String,
     pub https: Https
@@ -80,7 +78,7 @@ impl Config {
             }
         }
 
-        match serde_json::from_slice(&*json) {
+        let config: Config = match serde_json::from_slice(&*json) {
             Ok(json) => json,
             Err(e) => {
                 eprintln!("[Config::new():{}] A critical server config file is malformed.\n\
@@ -88,13 +86,34 @@ impl Config {
                            {e}", line!());
                 panic!("Unrecoverable error occurred while trying to set up connection.");
             }
+        };
+
+        if let Some(access_control) = &config.access_control {
+            for (_, v) in &access_control.list {
+                if !v.eq("allow") && !v.eq("deny") {
+                    eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
+                                                    Error information:\n\
+                                                    invalid word in config.json access_control, should be either \"allow\" or \"deny\".", line!());
+
+                    panic!("Unrecoverable error occurred trying to set up connection.");
+                }
+            }
         }
+
+        if let Some(encoding) = &config.encoding {
+            if !encoding.supported_encodings.contains(&encoding.use_encoding) {
+                eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
+                                                Error information:\n\
+                                                invalid word in config.json use_encoding, should be either \"gzip\" or \"br\".", line!());
+
+                panic!("Unrecoverable error occurred trying to set up connection.");
+            }
+        }
+
+        config
     }
 
-    pub async fn is_access_allowed<T>(&self, resource: &String, stream: &mut T) -> bool
-    where
-        T: AsyncRead + AsyncWrite + Unpin
-    {
+    pub async fn is_access_allowed(&self, resource: &String) -> bool {
         if let Some(access_control) = &self.access_control {
             for (k, v) in &access_control.list {
                 if let Ok(paths) = glob(&*format!("{}/{k}", &self.document_root)) {
@@ -102,22 +121,6 @@ impl Config {
                         if entry.to_string_lossy().eq(&*format!("{}/{resource}", &self.document_root)) {
                             if v.eq("deny") {
                                 return false;
-                            }
-
-                            if !v.eq("allow") {
-                                eprintln!("[is_access_allowed():{}] A critical server config file is malformed.\n\
-                                            Error information:\n\
-                                            invalid word in config.json access_control, should be either \"allow\" or \"deny\"\n\
-                                            Attempting to send Internal Server Error page to the client...", line!());
-
-                                if let Err(e) = internal_server_error(stream).await {
-                                    eprintln!("[is_access_allowed():{}] FAILED. Error information: {e}", line!());
-                                }
-                                eprintln!("Attempting to close connection...");
-                                if let Err(e) = stream.shutdown().await {
-                                    eprintln!("[is_access_allowed():{}] FAILED. Error information:\n{e}", line!());
-                                }
-                                panic!("Unrecoverable error occurred trying to set up connection.");
                             }
 
                             return true;
@@ -130,42 +133,54 @@ impl Config {
     }
 
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {
-        let supported_encodings = &self.encoding.supported_encodings;
+        if let Some(encoding) = &self.encoding {
+            let supported_encodings = &encoding.supported_encodings;
 
-        if supported_encodings.is_empty() {
-            return None
-        }
-        Some(supported_encodings)
-    }
-
-    pub fn get_response_encoding(&self, content: &Vec<u8>, type_guess: &String, type_: &String, headers: &HashMap<String, String>) -> Option<&String> {
-        if let (true, false, true, Some(content_encoding), Some(supported_encodings)) = (
-                                                      &self.encoding.enabled,
-                                                      content.is_empty(),
-                                                      type_.eq("text") ||
-                                                      self.encoding.encoding_applicable_mime_types.contains(type_guess),
-                                                      headers.get("accept-encoding"),
-                                                      &self.get_supported_encodings())
-        {
-            let encoding = &self.encoding.use_encoding;
-            let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
-
-            if accepted_encodings.contains(&encoding) && supported_encodings.contains(&encoding) {
-                return Some(encoding)
+            if !supported_encodings.is_empty() {
+                return Some(supported_encodings);
             }
         }
         None
     }
 
-    pub fn get_deny_action(&self) -> u16 {
+    pub fn get_response_encoding(&self, content: &Vec<u8>, type_guess: &String, type_: &String, headers: &HashMap<String, String>) -> Option<&String> {
+        if let Some(encoding) = &self.encoding {
+            if let (Some(content_encoding), Some(_)) = (headers.get("accept-encoding"), &self.get_supported_encodings()) {
+                if !content.is_empty() && type_.eq("text") {
+                    let encoding = &encoding.use_encoding;
+                    let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
+
+                    if accepted_encodings.contains(&encoding) {
+                        return Some(encoding);
+                    }
+                    return None;
+                }
+                if !content.is_empty() && !type_.eq("text") {
+                    if let Some(encoding_applicable_mime_types) = &encoding.encoding_applicable_mime_types {
+                        if encoding_applicable_mime_types.contains(type_guess) {
+                            let encoding = &encoding.use_encoding;
+                            let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
+
+                            if accepted_encodings.contains(&encoding) {
+                                return Some(encoding);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_deny_action(&self) -> Option<u16> {
         let Some(access_control) = &self.access_control else {
-            return 404;
+            return None;
         };
 
         let deny_action = access_control.deny_action.clone();
         if deny_action != 403 && deny_action != 404 {
-            return 404
+            return Some(404);
         }
-        deny_action
+        Some(deny_action)
     }
 }

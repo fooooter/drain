@@ -473,18 +473,18 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub fn page<'a>(page: &str,
-                request_data: RequestData<'a>,
-                request_headers: &HashMap<String, String>,
-                mut response_headers: &mut HashMap<String, String>,
-                mut set_cookie: &mut HashMap<String, SetCookie>,
-                config: &Config) -> Result<Option<Vec<u8>>, LibError>
+pub fn endpoint<'a>(endpoint: &str,
+                    request_data: RequestData<'a>,
+                    request_headers: &HashMap<String, String>,
+                    mut response_headers: &mut HashMap<String, String>,
+                    mut set_cookie: &mut HashMap<String, SetCookie>,
+                    config: &Config) -> Result<Option<Vec<u8>>, LibError>
 {
     unsafe {
-        let page_symbol = String::from(page).replace("/", "::");
-        let lib = Library::new(format!("{}/{}", &config.server_root, &config.dynamic_pages_library))?;
-        let p = lib.get::<Page>(page_symbol.as_bytes())?;
-        let content = p(request_data, &request_headers, &mut response_headers, &mut set_cookie);
+        let endpoint_symbol = String::from(endpoint).replace("/", "::");
+        let lib = Library::new(format!("{}/{}", &config.server_root, &config.endpoints_library))?;
+        let e = lib.get::<Page>(endpoint_symbol.as_bytes())?;
+        let content = e(request_data, &request_headers, &mut response_headers, &mut set_cookie);
         lib.close()?;
 
         Ok(content)

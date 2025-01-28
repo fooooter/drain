@@ -19,7 +19,7 @@ where
         let mut path_trim = path_str.trim_start_matches(document_root);
         path_trim = path_trim.trim_start_matches('/');
 
-        if !config.is_access_allowed(&String::from(path_trim), stream).await {
+        if !config.is_access_allowed(&String::from(path_trim)).await {
             continue;
         }
 

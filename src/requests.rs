@@ -100,10 +100,10 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if !config.is_access_allowed(&resource, &mut stream).await {
-        let deny_action = config.get_deny_action();
+    if !config.is_access_allowed(&resource).await {
+        let deny_action = config.get_deny_action().unwrap();
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = page(
+        let content = endpoint(
             if deny_action == 404 {"not_found"} else {"forbidden"},
             Get(&None),
             headers,
@@ -131,10 +131,10 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index")).await {
-            format!("{resource}/index")
-        } else {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
             format!("{resource}/index.html")
+        } else {
+            format!("{resource}/index")
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
@@ -144,8 +144,8 @@ where
         let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            match &config.dynamic_pages {
-                Some(dynamic_pages) if dynamic_pages.contains(&res_tmp_trim) => {},
+            match &config.endpoints {
+                Some(endpoints) if endpoints.contains(&res_tmp_trim) => {}
                 _ => {
                     return index_of(&mut stream, config, resource, false).await;
                 }
@@ -155,10 +155,10 @@ where
         resource = res_tmp_trim;
     }
 
-    if let Some(dynamic_pages) = &config.dynamic_pages {
-        if dynamic_pages.contains(&resource) {
+    if let Some(endpoints) = &config.endpoints {
+        if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = page(&*resource, Get(params), headers, &mut response_headers, &mut set_cookie, config);
+            let content = endpoint(&*resource, Get(params), headers, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -230,7 +230,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = page("not_found", Get(params), headers, &mut response_headers, &mut set_cookie, config);
+            let content = endpoint("not_found", Get(params), headers, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -262,16 +262,16 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if !config.is_access_allowed(&resource, &mut stream).await {
-        let deny_action = config.get_deny_action();
+    if !config.is_access_allowed(&resource).await {
+        let deny_action = config.get_deny_action().unwrap();
         return send_response(&mut stream, Some(config), deny_action, Some(response_headers), None, None).await;
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index")).await {
-            format!("{resource}/index")
-        } else {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
             format!("{resource}/index.html")
+        } else {
+            format!("{resource}/index")
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
@@ -279,9 +279,9 @@ where
         }
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            match &config.dynamic_pages {
-                Some(dynamic_pages) if dynamic_pages.contains(&String::from("index")) ||
-                    dynamic_pages.contains(&String::from("index.html")) => {},
+            match &config.endpoints {
+                Some(endpoints) if endpoints.contains(&String::from("index")) ||
+                    endpoints.contains(&String::from("index.html")) => {}
                 _ => {
                     return index_of(&mut stream, config, resource, true).await;
                 }
@@ -291,10 +291,10 @@ where
         resource = res_tmp;
     }
 
-    if let Some(dynamic_pages) = &config.dynamic_pages {
-        if dynamic_pages.contains(&resource) {
+    if let Some(endpoints) = &config.endpoints {
+        if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            match page(&*resource, Head, headers, &mut response_headers, &mut set_cookie, config) {
+            match endpoint(&*resource, Head, headers, &mut response_headers, &mut set_cookie, config) {
                 Ok(content) => {
                     if let Some(c) = content {
                         let content_length = c.len().to_string();
@@ -347,10 +347,10 @@ where
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if !config.is_access_allowed(&resource, &mut stream).await {
-        let deny_action = config.get_deny_action();
+    if !config.is_access_allowed(&resource).await {
+        let deny_action = config.get_deny_action().unwrap();
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = page(
+        let content = endpoint(
             if deny_action == 404 {"not_found"} else {"forbidden"},
             Post(&None),
             headers,
@@ -378,10 +378,10 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index")).await {
-            format!("{resource}/index")
-        } else {
+        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
             format!("{resource}/index.html")
+        } else {
+            format!("{resource}/index")
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
@@ -389,9 +389,9 @@ where
         }
 
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
-            match &config.dynamic_pages {
-                Some(dynamic_pages) if dynamic_pages.contains(&String::from("index")) ||
-                    dynamic_pages.contains(&String::from("index.html")) => {},
+            match &config.endpoints {
+                Some(endpoints) if endpoints.contains(&String::from("index")) ||
+                    endpoints.contains(&String::from("index.html")) => {}
                 _ => {
                     return index_of(&mut stream, config, resource, false).await;
                 }
@@ -401,10 +401,10 @@ where
         resource = res_tmp;
     }
 
-    if let Some(dynamic_pages) = &config.dynamic_pages {
-        if dynamic_pages.contains(&resource) {
+    if let Some(endpoints) = &config.endpoints {
+        if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = page(&*resource, Post(data), headers, &mut response_headers, &mut set_cookie, config);
+            let content = endpoint(&*resource, Post(data), headers, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -476,7 +476,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = page("not_found", Post(data), headers, &mut response_headers, &mut set_cookie, config);
+            let content = endpoint("not_found", Post(data), headers, &mut response_headers, &mut set_cookie, config);
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {

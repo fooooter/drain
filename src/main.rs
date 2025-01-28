@@ -108,16 +108,14 @@ async fn main() -> io::Result<()> {
     println!("Drain {}, starting...", env!("CARGO_PKG_VERSION"));
     let config = Arc::new(Config::new().await);
 
-    let encoding_enabled = (&config.encoding.enabled).clone();
-    let encoding = &config.encoding.use_encoding;
     let https_enabled = (&config.https.enabled).clone();
     let bind_host = &config.bind_host;
 
-    println!("Encoding {}.", if encoding_enabled {
-        format!("enabled and set to \"{encoding}\"")
+    if let Some(encoding) = &config.encoding {
+        println!("Encoding enabled and set to \"{}\".", encoding.use_encoding);
     } else {
-        String::from("disabled")
-    });
+        println!("Encoding disabled.");
+    }
 
     if https_enabled {
         println!("SSL enabled.");

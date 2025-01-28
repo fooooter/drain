@@ -12,12 +12,11 @@
   },
   "bind_host": "127.0.0.1",
   "bind_port": "80",
-  "dynamic_pages": [
+  "endpoints": [
     "index"
   ],
-  "dynamic_pages_library": "libdynamic_pages.so",
+  "endpoints_library": "libdynamic_pages.so",
   "encoding": {
-    "enabled": true,
     "supported_encodings":  ["gzip", "br"],
     "use_encoding": "br",
     "encoding_applicable_mime_types": [

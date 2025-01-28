@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v0.8.5-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v0.9.5-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -17,10 +17,10 @@
 [✖]     HTTP/3<br>
 
 
-## This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages.
+## This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages and endpoints.
 
-Dynamic pages are generated inside a dynamic library, so that it's easy to create them without modifying
-the core and recompiling the server only to change one thing on a page.
+Dynamic pages/endpoints are generated inside a dynamic library, so that it's easy to create them without modifying
+the core and recompiling the server only to change one thing on a page or inside the endpoint.
 
 ## OS compatibility
 
@@ -46,12 +46,11 @@ Currently available fields are:
   know if the resource is unavailable or access to it is denied.
 - `bind_host` - bind host to the server.
 - `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or another privileged user.
-- `dynamic_pages` - holds a list of every dynamic page available, so if you create one, be sure to specify it here!
-- `dynamic_pages_library` - a path to the dynamic library for dynamic pages, which must be relative to the `server_root`.
+- `endpoints` - holds a list of every dynamic page/endpoint available, so if you create one, be sure to specify it here!
+- `endpoint_library` - a path to the dynamic library for dynamic pages/endpoints, which must be relative to the `server_root`.
 - `encoding`:
-  * `enabled` - enable response body encoding.
-  * `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
   * `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
+  * `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
   * `encoding_applicable_mime_types` - a list of media types to which encoding should be applied. It's best to leave this setting as is.
 - `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
 - `server_root` - a directory in which server data are kept, like, for example, key-pairs for SSL.
@@ -84,7 +83,7 @@ Currently available fields are:
   The certificate must match the private key and a path to it must be relative to the `server_root`.
 
 Drain must be restarted in order for changes to take effect.
-Currently, the optional fields are: `access_control`, `global_response_headers`, `dynamic_pages`, `min_protocol_version`.
+Currently, the optional fields are: `encoding`, `access_control`, `global_response_headers`, `endpoints`, `min_protocol_version`.
 
 ## Usage
 
@@ -99,7 +98,7 @@ Stick to the macro library if possible - https://github.com/fooooter/drain_macro
 
 ### Structure
 
-Each page should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
+Each endpoint should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
 
 ```rust
 use drain_common::RequestData::*;
@@ -137,7 +136,7 @@ The dynamic page ALWAYS returns `Option<Vec<u8>>`, no matter what you specify as
 It's also possible to simulate directory structure using this `drain_endpoint` macro. 
 Instead of `#[drain_endpoint("index")]` you can, for example, specify `#[drain_endpoint("settings/index")]`.
 It will correspond to `/settings/index` URL path. Furthermore, the effect will be the same when you specify `/settings` in the URL.
-Keep in mind you'd have to specify `settings/index` inside `dynamic_pages` field in config.json.
+Keep in mind you'd have to specify `settings/index` inside `endpoints` field in config.json.
 
 ### RequestData
 

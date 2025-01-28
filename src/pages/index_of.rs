@@ -23,7 +23,7 @@ where
             continue;
         }
 
-        directory_list.push_str(&*format!("<li><a href={path_trim}>{path_trim}</a></li>"));
+        directory_list.push_str(&*format!("<li><a href=/{path_trim}>{path_trim}</a></li>"));
     }
 
     let content: Vec<u8> = Vec::from(format!(r#"

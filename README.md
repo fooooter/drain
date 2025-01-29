@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v0.9.5-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.0.1-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -32,8 +32,6 @@ On Windows it works properly unless you have to use the SSL.
 Currently only OpenSSL and glibc.
 
 ## Build
-
-### DISCLAIMER: ALWAYS try to build Drain from source if possible, due to the dynamic linking with OpenSSL. That means the recent builds on crates.io, which have statically linked OpenSSL and musl libc, are there only for the sake of it and should be avoided.
 
 To build Drain, run `cargo build` in the root of a source.
 

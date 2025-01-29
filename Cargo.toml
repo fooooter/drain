@@ -1,7 +1,7 @@
 [package]
 name = "drain_server"
 description = "A WIP web server/framework."
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 repository = "https://github.com/fooooter/drain"
 license = "LGPL-3.0-or-later"

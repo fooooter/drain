@@ -27,7 +27,13 @@ the core and recompiling the server only to change one thing on a page or inside
 Drain should work properly under every POSIX-compatible OS like Linux (under which it has been tested on primarily), BSDs and macOS.
 On Windows it works properly unless you have to use the SSL.
 
+## Dependencies
+
+Currently only OpenSSL and glibc.
+
 ## Build
+
+### DISCLAIMER: ALWAYS try to build Drain from source if possible, due to the dynamic linking with OpenSSL. That means the recent builds on crates.io, which have statically linked OpenSSL and musl libc, are there only for the sake of it and should be avoided.
 
 To build Drain, run `cargo build` in the root of a source.
 

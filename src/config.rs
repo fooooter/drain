@@ -146,7 +146,9 @@ impl Config {
     pub fn get_response_encoding(&self, content: &Vec<u8>, type_guess: &String, type_: &String, headers: &HashMap<String, String>) -> Option<&String> {
         if let Some(encoding) = &self.encoding {
             if let (Some(content_encoding), Some(_)) = (headers.get("accept-encoding"), &self.get_supported_encodings()) {
-                if !content.is_empty() && type_.eq("text") {
+                let content_empty = content.is_empty();
+                let type_equals_text = type_.eq("text");
+                if !content_empty && type_equals_text {
                     let encoding = &encoding.use_encoding;
                     let accepted_encodings: Vec<String> = content_encoding.split(',').map(|x| String::from(x.trim())).collect();
 
@@ -155,7 +157,7 @@ impl Config {
                     }
                     return None;
                 }
-                if !content.is_empty() && !type_.eq("text") {
+                if !content_empty && !type_equals_text {
                     if let Some(encoding_applicable_mime_types) = &encoding.encoding_applicable_mime_types {
                         if encoding_applicable_mime_types.contains(type_guess) {
                             let encoding = &encoding.use_encoding;

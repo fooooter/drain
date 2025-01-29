@@ -6,7 +6,6 @@ mod error;
 use std::collections::HashMap;
 use std::error::Error;
 use std::pin::Pin;
-use std::sync::Arc;
 use openssl::error::ErrorStack;
 use openssl::ssl::{select_next_proto, AlpnError, Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use tokio::net::*;
@@ -16,20 +15,20 @@ use tokio_openssl::SslStream;
 use crate::requests::Request::{Get, Head, Options, Post};
 use crate::requests::*;
 use crate::util::*;
-use crate::config::Config;
+use crate::config::CONFIG;
 use crate::error::ServerError;
 use crate::pages::internal_server_error::internal_server_error;
 
-fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
-    let server_root = &config.server_root;
+fn configure_ssl() -> Result<Ssl, ErrorStack> {
+    let server_root = &CONFIG.server_root;
     let mut ssl_ctx_builder = SslContext::builder(SslMethod::tls())?;
 
-    ssl_ctx_builder.set_private_key_file(format!("{}/{}", server_root, &config.https.ssl_private_key_file), SslFiletype::PEM)?;
-    ssl_ctx_builder.set_certificate_file(format!("{}/{}", server_root, &config.https.ssl_certificate_file), SslFiletype::PEM)?;
+    ssl_ctx_builder.set_private_key_file(format!("{}/{}", server_root, &CONFIG.https.ssl_private_key_file), SslFiletype::PEM)?;
+    ssl_ctx_builder.set_certificate_file(format!("{}/{}", server_root, &CONFIG.https.ssl_certificate_file), SslFiletype::PEM)?;
     ssl_ctx_builder.check_private_key()?;
 
     ssl_ctx_builder.set_min_proto_version(
-        match &config.https.min_protocol_version {
+        match &CONFIG.https.min_protocol_version {
             Some(min_proto_version) if min_proto_version.eq("SSL3") => Some(SslVersion::SSL3),
             Some(min_proto_version) if min_proto_version.eq("TLS1.3") => Some(SslVersion::TLS1_3),
             Some(min_proto_version) if min_proto_version.eq("TLS1") => Some(SslVersion::TLS1),
@@ -42,9 +41,9 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     )?;
 
     if let Some(SslVersion::TLS1_3) = ssl_ctx_builder.min_proto_version() {
-        ssl_ctx_builder.set_ciphersuites(&config.https.cipher_list)?;
+        ssl_ctx_builder.set_ciphersuites(&CONFIG.https.cipher_list)?;
     } else {
-        ssl_ctx_builder.set_cipher_list(&config.https.cipher_list)?;
+        ssl_ctx_builder.set_cipher_list(&CONFIG.https.cipher_list)?;
     }
 
     ssl_ctx_builder.set_verify(SslVerifyMode::PEER);
@@ -60,31 +59,31 @@ fn configure_ssl(config: &Config) -> Result<Ssl, ErrorStack> {
     Ssl::new(&ssl_ctx)
 }
 
-async fn handle_connection<T>(mut stream: T, config: &Config) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(mut stream: T) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
-    match receive_request(&mut stream, &config).await {
+    match receive_request(&mut stream).await {
         Ok(request) => {
             match request {
-                Get {resource, params, headers} => handle_get(stream, config, &headers, resource, &params).await,
-                Head {resource, headers} => handle_head(stream, config, &headers, resource).await,
-                Post {resource, headers, data} => handle_post(stream, config, &headers, resource, &data).await,
-                Options {..} => handle_options(stream, config).await,
+                Get {resource, params, headers} => handle_get(stream, &headers, resource, &params).await,
+                Head {resource, headers} => handle_head(stream, &headers, resource).await,
+                Post {resource, headers, data} => handle_post(stream, &headers, resource, &data).await,
+                Options {..} => handle_options(stream).await,
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
 
-                    send_response(&mut stream, Some(config), 405, Some(accept_header), None, None).await
+                    send_response(&mut stream, 405, Some(accept_header), None, None).await
                 }
             }
         },
         Err(e) => {
             match e {
                 ServerError::DecompressionError(..) | ServerError::UnsupportedEncoding => {
-                    send_response(&mut stream, Some(config), 406, None, None, None).await?
+                    send_response(&mut stream, 406, None, None, None).await?
                 },
                 ServerError::InvalidRequest | ServerError::MalformedPayload => {
-                    send_response(&mut stream, Some(config), 400, None, None, None).await?
+                    send_response(&mut stream, 400, None, None, None).await?
                 },
                 ServerError::UnsupportedMediaType => {
                     let response_headers: HashMap<String, String> = HashMap::from([
@@ -92,7 +91,7 @@ where
                         (String::from("Vary"), String::from("Content-Type"))
                     ]);
 
-                    send_response(&mut stream, Some(config), 415, Some(response_headers), None, None).await?
+                    send_response(&mut stream, 415, Some(response_headers), None, None).await?
                 }
                 _ => {
                     internal_server_error(&mut stream).await?;
@@ -106,12 +105,11 @@ where
 #[tokio::main]
 async fn main() -> io::Result<()> {
     println!("Drain {}, starting...", env!("CARGO_PKG_VERSION"));
-    let config = Arc::new(Config::new().await);
 
-    let https_enabled = (&config.https.enabled).clone();
-    let bind_host = &config.bind_host;
+    let https_enabled = (&CONFIG.https.enabled).clone();
+    let bind_host = &CONFIG.bind_host;
 
-    if let Some(encoding) = &config.encoding {
+    if let Some(encoding) = &CONFIG.encoding {
         println!("Encoding enabled and set to \"{}\".", encoding.use_encoding);
     } else {
         println!("Encoding disabled.");
@@ -119,13 +117,11 @@ async fn main() -> io::Result<()> {
 
     if https_enabled {
         println!("SSL enabled.");
-        let bind_port = &config.https.bind_port;
+        let bind_port = &CONFIG.https.bind_port;
         let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
         println!("Listening on {}:{}", bind_host, bind_port);
         loop {
-            let config = config.clone();
-
-            let ssl = configure_ssl(&*config);
+            let ssl = configure_ssl();
             match ssl {
                 Ok(ssl) => {
                     let (stream, _) = listener.accept().await?;
@@ -139,7 +135,7 @@ async fn main() -> io::Result<()> {
                     }
 
                     spawn(async move {
-                        if let Err(e) = handle_connection(stream, &*config).await {
+                        if let Err(e) = handle_connection(stream).await {
                             eprintln!("[main():{}] An error occurred while handling connection:\
                             \n{e}\n", line!());
                         }
@@ -157,16 +153,14 @@ async fn main() -> io::Result<()> {
     }
 
     println!("SSL disabled.");
-    let bind_port = &config.bind_port;
+    let bind_port = &CONFIG.bind_port;
     let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
     println!("Listening on {}:{}", bind_host, bind_port);
     loop {
-        let config = config.clone();
-
         let (stream, _) = listener.accept().await?;
 
         spawn(async move {
-            if let Err(e) = handle_connection(stream, &*config).await {
+            if let Err(e) = handle_connection(stream).await {
                 eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
             }
         });

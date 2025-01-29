@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::env;
+use std::sync::LazyLock;
 use glob::glob;
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+use tokio::runtime::Handle;
+use tokio::task;
 
 #[derive(Deserialize)]
 pub struct AccessControl {
@@ -89,6 +92,12 @@ impl Config {
         };
 
         if let Some(access_control) = &config.access_control {
+            if access_control.deny_action != 404 && access_control.deny_action != 403 {
+                eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
+                                                Error information:\n\
+                                                invalid deny action in config.json access_control, should be either 404 or 403.", line!());
+            }
+
             for (_, v) in &access_control.list {
                 if !v.eq("allow") && !v.eq("deny") {
                     eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
@@ -113,25 +122,6 @@ impl Config {
         config
     }
 
-    pub async fn is_access_allowed(&self, resource: &String) -> bool {
-        if let Some(access_control) = &self.access_control {
-            for (k, v) in &access_control.list {
-                if let Ok(paths) = glob(&*format!("{}/{k}", &self.document_root)) {
-                    for entry in paths.filter_map(Result::ok) {
-                        if entry.to_string_lossy().eq(&*format!("{}/{resource}", &self.document_root)) {
-                            if v.eq("deny") {
-                                return false;
-                            }
-
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        true
-    }
-
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {
         if let Some(encoding) = &self.encoding {
             let supported_encodings = &encoding.supported_encodings;
@@ -145,7 +135,7 @@ impl Config {
 
     pub fn get_response_encoding(&self, content: &Vec<u8>, type_guess: &String, type_: &String, headers: &HashMap<String, String>) -> Option<&String> {
         if let Some(encoding) = &self.encoding {
-            if let (Some(content_encoding), Some(_)) = (headers.get("accept-encoding"), &self.get_supported_encodings()) {
+            if let Some(content_encoding) = headers.get("accept-encoding") {
                 let content_empty = content.is_empty();
                 let type_equals_text = type_.eq("text");
                 if !content_empty && type_equals_text {
@@ -174,15 +164,30 @@ impl Config {
         None
     }
 
-    pub fn get_deny_action(&self) -> Option<u16> {
-        let Some(access_control) = &self.access_control else {
-            return None;
-        };
 
-        let deny_action = access_control.deny_action.clone();
-        if deny_action != 403 && deny_action != 404 {
-            return Some(404);
+}
+
+pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
+    task::block_in_place(move || {
+        Handle::current().block_on(async move {
+            Config::new().await
+        })
+    })
+});
+
+impl AccessControl {
+    pub fn is_access_allowed(&self, resource: &String) -> bool {
+        for (k, v) in &self.list {
+            if let Ok(paths) = glob(&*format!("{}/{k}", &CONFIG.document_root)) {
+                for entry in paths.filter_map(Result::ok) {
+                    if entry.to_string_lossy().eq(&*format!("{}/{resource}", &CONFIG.document_root)) {
+                        if v.eq("deny") {
+                            return false;
+                        }
+                    }
+                }
+            }
         }
-        Some(deny_action)
+        true
     }
 }

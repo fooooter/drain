@@ -19,14 +19,13 @@ use drain_common::cookies::{SetCookie, SameSite};
 use drain_common::{FormDataValue, RequestBody, RequestData};
 use drain_common::RequestBody::{FormData, XWWWFormUrlEncoded};
 use crate::pages::internal_server_error::internal_server_error;
-use crate::config::Config;
+use crate::config::CONFIG;
 use crate::requests::Request;
 use crate::error::*;
 
 type Page = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Option<Vec<u8>>;
 
 pub async fn send_response<T>(stream: &mut T,
-                              config: Option<&Config>,
                               status: u16,
                               mut local_response_headers: Option<HashMap<String, String>>,
                               content: Option<Vec<u8>>,
@@ -106,12 +105,8 @@ where
     let date_header = format!("Date: {}\r\n", date);
     response.push_str(&*date_header);
 
-    let global_response_headers = if let Some(c) = config {
-        if let Some(global_response_headers) = &c.global_response_headers {
-            global_response_headers.clone()
-        } else {
-            HashMap::from([(String::from("Connection"), String::from("close"))])
-        }
+    let global_response_headers = if let Some(global_response_headers) = &CONFIG.global_response_headers {
+        global_response_headers.clone()
     } else {
         HashMap::from([(String::from("Connection"), String::from("close"))])
     };
@@ -265,7 +260,7 @@ where
     Ok(())
 }
 
-pub async fn receive_request<T>(stream: &mut T, config: &Config) -> Result<Request, ServerError>
+pub async fn receive_request<T>(stream: &mut T) -> Result<Request, ServerError>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -320,7 +315,7 @@ where
 
         let mut payload: Vec<u8> = Vec::new();
 
-        match (headers.get("content-encoding"), config.get_supported_encodings()) {
+        match (headers.get("content-encoding"), CONFIG.get_supported_encodings()) {
             (Some(content_encoding), Some(supported_encodings))
             if supported_encodings.contains(content_encoding) => {
                 if content_encoding.eq("gzip") {
@@ -477,12 +472,11 @@ pub fn endpoint<'a>(endpoint: &str,
                     request_data: RequestData<'a>,
                     request_headers: &HashMap<String, String>,
                     mut response_headers: &mut HashMap<String, String>,
-                    mut set_cookie: &mut HashMap<String, SetCookie>,
-                    config: &Config) -> Result<Option<Vec<u8>>, LibError>
+                    mut set_cookie: &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, LibError>
 {
     unsafe {
         let endpoint_symbol = String::from(endpoint).replace("/", "::");
-        let lib = Library::new(format!("{}/{}", &config.server_root, &config.endpoints_library))?;
+        let lib = Library::new(format!("{}/{}", &CONFIG.server_root, &CONFIG.endpoints_library))?;
         let e = lib.get::<Page>(endpoint_symbol.as_bytes())?;
         let content = e(request_data, &request_headers, &mut response_headers, &mut set_cookie);
         lib.close()?;

@@ -24,5 +24,5 @@ where
     "#, env!("CARGO_PKG_VERSION")));
 
     let response_headers = HashMap::from([(String::from("Content-Type"), String::from("text/html; charset=utf-8"))]);
-    send_response(&mut stream, None, 500, Some(response_headers), Some(content), None).await
+    send_response(&mut stream, 500, Some(response_headers), Some(content), None).await
 }

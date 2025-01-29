@@ -32,7 +32,8 @@ where
             let dir = dir?;
             let path = dir.path();
             let path_str = String::from(path.to_string_lossy());
-            let path_trim = path_str.trim_start_matches(document_root);
+            let mut path_trim = path_str.trim_start_matches(document_root);
+            path_trim = path_trim.trim_start_matches('/');
 
             directory_list.push_str(&*format!("<li><a href=/{path_trim}>{path_trim}</a></li>"));
         }

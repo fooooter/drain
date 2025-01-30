@@ -7,7 +7,7 @@ use tokio::fs::*;
 use regex::*;
 use libloading::Error as LibError;
 use mime_guess::Mime;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use crate::util::*;
 use crate::config::CONFIG;
 use crate::error::ServerError;
@@ -15,6 +15,7 @@ use drain_common::RequestBody;
 use drain_common::RequestData::{*};
 use drain_common::cookies::SetCookie;
 use crate::pages::index_of::index_of;
+use crate::pages::internal_server_error::internal_server_error;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -106,10 +107,11 @@ where
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let content = endpoint(
                 if deny_action == 404 { "not_found" } else { "forbidden" },
+                &mut stream,
                 Get(&None),
                 headers,
                 &mut response_headers,
-                &mut set_cookie);
+                &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -159,7 +161,7 @@ where
     if let Some(endpoints) = &CONFIG.endpoints {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(&*resource, Get(params), headers, &mut response_headers, &mut set_cookie);
+            let content = endpoint(&*resource, &mut stream, Get(params), headers, &mut response_headers, &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -193,8 +195,17 @@ where
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
-                            return Err(Box::new(e));
+                            eprintln!("[handle_get():{}]    An error occurred while opening a dynamic library file.\
+                                                            Check if dynamic_pages_library field in config.json is correct.\n
+                                                            Attempting to send Internal Server Error page to the client...", line!());
+                            if let Err(e) = internal_server_error(&mut stream).await {
+                                eprintln!("[handle_get():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            eprintln!("Attempting to close connection...");
+                            if let Err(e) = stream.shutdown().await {
+                                eprintln!("[handle_get():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            panic!("Unrecoverable error occurred while handling connection.");
                         }
                     }
                 }
@@ -231,7 +242,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint("not_found", Get(params), headers, &mut response_headers, &mut set_cookie);
+            let content = endpoint("not_found", &mut stream, Get(params), headers, &mut response_headers, &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -297,7 +308,7 @@ where
     if let Some(endpoints) = &CONFIG.endpoints {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            match endpoint(&*resource, Head, headers, &mut response_headers, &mut set_cookie) {
+            match endpoint(&*resource, &mut stream, Head, headers, &mut response_headers, &mut set_cookie).await {
                 Ok(content) => {
                     if let Some(c) = content {
                         let content_length = c.len().to_string();
@@ -314,8 +325,17 @@ where
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
-                            return Err(Box::new(e));
+                            eprintln!("[handle_head():{}]   An error occurred while opening a dynamic library file.\
+                                                            Check if dynamic_pages_library field in config.json is correct.\n
+                                                            Attempting to send Internal Server Error page to the client...", line!());
+                            if let Err(e) = internal_server_error(&mut stream).await {
+                                eprintln!("[handle_head():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            eprintln!("Attempting to close connection...");
+                            if let Err(e) = stream.shutdown().await {
+                                eprintln!("[handle_head():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            panic!("Unrecoverable error occurred while handling connection.");
                         }
                     }
                 }
@@ -356,10 +376,11 @@ where
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let content = endpoint(
                 if deny_action == 404 { "not_found" } else { "forbidden" },
+                &mut stream,
                 Post(&None),
                 headers,
                 &mut response_headers,
-                &mut set_cookie);
+                &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -408,7 +429,7 @@ where
     if let Some(endpoints) = &CONFIG.endpoints {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(&*resource, Post(data), headers, &mut response_headers, &mut set_cookie);
+            let content = endpoint(&*resource, &mut stream, Post(data), headers, &mut response_headers, &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -442,8 +463,17 @@ where
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file. Check if dynamic_pages_library field in config.json is correct.", line!());
-                            return Err(Box::new(e));
+                            eprintln!("[handle_post():{}]   An error occurred while opening a dynamic library file.\
+                                                            Check if dynamic_pages_library field in config.json is correct.\n
+                                                            Attempting to send Internal Server Error page to the client...", line!());
+                            if let Err(e) = internal_server_error(&mut stream).await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            eprintln!("Attempting to close connection...");
+                            if let Err(e) = stream.shutdown().await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            panic!("Unrecoverable error occurred while handling connection.");
                         }
                     }
                 }
@@ -480,7 +510,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint("not_found", Post(data), headers, &mut response_headers, &mut set_cookie);
+            let content = endpoint("not_found", &mut stream, Post(data), headers, &mut response_headers, &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {

@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
@@ -23,7 +24,7 @@ use crate::config::CONFIG;
 use crate::requests::Request;
 use crate::error::*;
 
-type Page = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Option<Vec<u8>>;
+type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
 
 pub async fn send_response<T>(stream: &mut T,
                               status: u16,
@@ -254,7 +255,6 @@ where
 
     if let Err(e) = stream.flush().await {
         eprintln!("[send_response():{}] An error occurred while flushing the output stream:\n{e}", line!());
-        return Err(Box::new(e));
     }
 
     Ok(())
@@ -452,7 +452,7 @@ where
                    Error information:\n{e1}\n\
                    Attempting to send Internal Server Error page to the client...", line!(), f);
         if let Err(e2) = internal_server_error(stream).await {
-            eprintln!("[rte_wrapper():{}] FAILED. Error information: {e2}", line!());
+            eprintln!("[rte_wrapper():{}] FAILED. Error information:\n{e2}", line!());
         }
         eprintln!("Attempting to close connection...");
         if let Err(e2) = stream.shutdown().await {
@@ -468,19 +468,43 @@ pub fn get_current_date() -> String {
     dt_formatted.to_string()
 }
 
-pub fn endpoint<'a>(endpoint: &str,
-                    request_data: RequestData<'a>,
-                    request_headers: &HashMap<String, String>,
-                    mut response_headers: &mut HashMap<String, String>,
-                    mut set_cookie: &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, LibError>
+pub async fn endpoint<'a, T>(endpoint: &str,
+                             stream: &mut T,
+                             request_data: RequestData<'a>,
+                             request_headers: &HashMap<String, String>,
+                             response_headers: &mut HashMap<String, String>,
+                             set_cookie: &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, LibError>
+where
+    T: AsyncRead + AsyncWrite + Unpin
 {
-    unsafe {
-        let endpoint_symbol = String::from(endpoint).replace("/", "::");
-        let lib = Library::new(format!("{}/{}", &CONFIG.server_root, &CONFIG.endpoints_library))?;
-        let e = lib.get::<Page>(endpoint_symbol.as_bytes())?;
-        let content = e(request_data, &request_headers, &mut response_headers, &mut set_cookie);
-        lib.close()?;
+    match unsafe {
+            let endpoint_symbol = String::from(endpoint).replace(|x| x == '/' || x == '\\', "::");
+            let lib = Library::new(format!("{}/{}", &CONFIG.server_root, &CONFIG.endpoints_library))?;
+            let e = lib.get::<Endpoint>(endpoint_symbol.as_bytes())?;
+            let content = e(request_data, &request_headers, response_headers, set_cookie);
+            lib.close()?;
 
-        Ok(content)
+            content
+    } {
+        Ok(content) => Ok(content),
+        Err(e) => {
+            if let Some(e) = e.downcast_ref::<&str>() {
+                eprintln!("[endpoint():{}] A panic occurred inside the dynamic endpoint. Error information:\n{e}", line!());
+            } else if let Some(e) = e.downcast_ref::<String>() {
+                eprintln!("[endpoint():{}] A panic occurred inside the dynamic endpoint. Error information:\n{e}", line!());
+            } else {
+                eprintln!("[endpoint():{}] A panic occurred inside the dynamic endpoint. No information about the error.", line!());
+            }
+
+            eprintln!("Attempting to send Internal Server Error page to the client...");
+            if let Err(e) = internal_server_error(stream).await {
+                eprintln!("[endpoint():{}] FAILED. Error information:\n{e}", line!());
+            }
+            eprintln!("Attempting to close connection...");
+            if let Err(e) = stream.shutdown().await {
+                eprintln!("[endpoint():{}] FAILED. Error information:\n{e}", line!());
+            }
+            panic!("Unrecoverable error occurred while handling connection.");
+        }
     }
 }

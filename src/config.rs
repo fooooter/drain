@@ -95,16 +95,17 @@ impl Config {
             if access_control.deny_action != 404 && access_control.deny_action != 403 {
                 eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
                                                 Error information:\n\
-                                                invalid deny action in config.json access_control, should be either 404 or 403.", line!());
+                                                invalid deny action in config.json access_control, should be either 404 or 403", line!());
+                panic!("Unrecoverable error occurred while trying to set up connection.")
             }
 
             for (_, v) in &access_control.list {
                 if !v.eq("allow") && !v.eq("deny") {
                     eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
                                                     Error information:\n\
-                                                    invalid word in config.json access_control, should be either \"allow\" or \"deny\".", line!());
+                                                    invalid word in config.json access_control, should be either \"allow\" or \"deny\"", line!());
 
-                    panic!("Unrecoverable error occurred trying to set up connection.");
+                    panic!("Unrecoverable error occurred while trying to set up connection.");
                 }
             }
         }
@@ -113,9 +114,10 @@ impl Config {
             if !encoding.supported_encodings.contains(&encoding.use_encoding) {
                 eprintln!("[Config::new():{}]   A critical server config file is malformed.\n\
                                                 Error information:\n\
-                                                invalid word in config.json use_encoding, should be either \"gzip\" or \"br\".", line!());
+                                                invalid word in config.json use_encoding, should be either \"gzip\" or \"br\"\n\
+                                                if you specified either \"gzip\" or \"br\" and still got this error, make sure it's specified in supported_encodings", line!());
 
-                panic!("Unrecoverable error occurred trying to set up connection.");
+                panic!("Unrecoverable error occurred while trying to set up connection.");
             }
         }
 

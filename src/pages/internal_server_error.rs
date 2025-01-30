@@ -17,9 +17,9 @@ where
         </head>
         <body>
             <h2>500 Internal Server Error</h2>
+            <hr>
+            <small>Drain {}</small>
         </body>
-        <hr>
-        <small>Drain {}</small>
     </html>
     "#, env!("CARGO_PKG_VERSION")));
 

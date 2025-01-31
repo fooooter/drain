@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
+use std::sync::LazyLock;
 use chrono::Utc;
 use brotli::{BrotliCompress, BrotliDecompress};
 use brotli::enc::BrotliEncoderParams;
@@ -19,12 +20,17 @@ use openssl::error::ErrorStack;
 use drain_common::cookies::{SetCookie, SameSite};
 use drain_common::{FormDataValue, RequestBody, RequestData};
 use drain_common::RequestBody::{FormData, XWWWFormUrlEncoded};
+use regex::bytes::Regex;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::CONFIG;
 use crate::requests::Request;
 use crate::error::*;
 
 type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
+
+pub static HEADERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: ?)([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)$"#).unwrap()
+});
 
 pub async fn send_response<T>(stream: &mut T,
                               status: u16,
@@ -391,41 +397,55 @@ where
                     }
 
                     let mut field_lines = field.split_str("\r\n").skip(1);
-                    let (Some(content_disp), Some(blank_line), Some(field_data)) = (field_lines.next(), field_lines.next(), field_lines.next()) else {
+                    let mut headers: HashMap<String, String> = HashMap::new();
+
+                    let Some(mut header_bytes) = field_lines.next() else {
                         return Err(ServerError::MalformedPayload);
                     };
 
-                    let Some((_, content_disp_val)) = content_disp.split_once_str(":") else {
-                        return Err(ServerError::MalformedPayload);
-                    };
-
-                    let mut content_disp_val = content_disp_val.split_str(";");
-                    let (Some(form_data), Some(name)) = (content_disp_val.next(), content_disp_val.next()) else {
-                        return Err(ServerError::MalformedPayload);
-                    };
-
-                    if !String::from_utf8_lossy(form_data).trim_start().eq("form-data") || !blank_line.trim_ascii().is_empty() {
-                        return Err(ServerError::MalformedPayload);
-                    }
-
-                    let Some((_, name)) = name.split_once_str("=") else {
-                        return Err(ServerError::MalformedPayload);
-                    };
-
-                    let v = FormDataValue {
-                        filename: if let Some(filename) = content_disp_val.next() {
-                            let Some((_, filename)) = filename.split_once_str("=") else {
+                    while HEADERS_REGEX.is_match(header_bytes) {
+                        if let Some(h) = field_lines.next() {
+                            let Some((header_name, header_value)) = header_bytes.split_once_str(":") else {
                                 return Err(ServerError::MalformedPayload);
                             };
 
-                            Some(String::from(String::from_utf8_lossy(filename).trim_matches('"')))
+                            headers.insert(String::from_utf8_lossy(header_name.trim_ascii()).to_lowercase(), String::from_utf8_lossy(header_value.trim_ascii()).to_string());
+                            header_bytes = h;
+                            continue;
+                        }
+                        return Err(ServerError::MalformedPayload);
+                    }
+
+                    let (Some(content_disp), Some(field_data)) = (headers.get("content-disposition"), field_lines.next()) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    let mut content_disp_split = content_disp.split(";");
+                    let (Some(form_data), Some(name)) = (content_disp_split.next(), content_disp_split.next()) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    if !form_data.trim_start().eq("form-data") || !header_bytes.trim_ascii().is_empty() {
+                        return Err(ServerError::MalformedPayload);
+                    }
+
+                    let Some((_, name)) = name.split_once("=") else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    body_hm.insert(String::from(name.trim_matches('"')), FormDataValue {
+                        filename: if let Some(filename) = content_disp_split.next() {
+                            let Some((_, filename)) = filename.split_once("=") else {
+                                return Err(ServerError::MalformedPayload);
+                            };
+
+                            Some(String::from(filename.trim_matches('"')))
                         } else {
                             None
                         },
+                        headers,
                         value: Vec::from(field_data)
-                    };
-
-                    body_hm.insert(String::from(String::from_utf8_lossy(name).trim_matches('"')), v);
+                    });
                 }
                 body = FormData(body_hm);
             },

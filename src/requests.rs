@@ -11,11 +11,11 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use crate::util::*;
 use crate::config::CONFIG;
 use crate::error::ServerError;
-use drain_common::RequestBody;
-use drain_common::RequestData::{*};
-use drain_common::cookies::SetCookie;
 use crate::pages::index_of::index_of;
 use crate::pages::internal_server_error::internal_server_error;
+use drain_common::RequestBody;
+use drain_common::RequestData::*;
+use drain_common::cookies::SetCookie;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -62,11 +62,9 @@ impl Request {
             }
         }
 
-        let regex_headers = Regex::new(r#"^([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: ?)([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)$"#).unwrap();
-
         let headers_iter = request_iter
             .take_while(|x| {
-                regex_headers.is_match(x)
+                HEADERS_REGEX.is_match(x.as_bytes())
             });
 
         let mut headers: HashMap<String, String> = HashMap::new();
@@ -292,17 +290,18 @@ where
             return index_of(&mut stream, resource, true, headers).await;
         }
 
+        let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
             match &CONFIG.endpoints {
-                Some(endpoints) if endpoints.contains(&String::from("index")) ||
-                    endpoints.contains(&String::from("index.html")) => {}
+                Some(endpoints) if endpoints.contains(&res_tmp_trim) => {}
                 _ => {
                     return index_of(&mut stream, resource, true, headers).await;
                 }
             }
         }
 
-        resource = res_tmp;
+        resource = res_tmp_trim;
     }
 
     if let Some(endpoints) = &CONFIG.endpoints {
@@ -361,7 +360,7 @@ where
     }
 }
 
-pub async fn handle_post<T>(mut stream: T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>) -> Result<(), Box<dyn Error>>
+pub async fn handle_post<'a, T>(mut stream: T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -413,17 +412,18 @@ where
             return index_of(&mut stream, resource, false, headers).await;
         }
 
+        let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
             match &CONFIG.endpoints {
-                Some(endpoints) if endpoints.contains(&String::from("index")) ||
-                    endpoints.contains(&String::from("index.html")) => {}
+                Some(endpoints) if endpoints.contains(&res_tmp_trim) => {}
                 _ => {
                     return index_of(&mut stream, resource, false, headers).await;
                 }
             }
         }
 
-        resource = res_tmp;
+        resource = res_tmp_trim;
     }
 
     if let Some(endpoints) = &CONFIG.endpoints {

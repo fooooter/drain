@@ -40,6 +40,7 @@ To build Drain, run `cargo build` in the root of a source.
 Drain can be configured using config.json file. In order to use a config.json file, you have to specify it in `DRAIN_CONFIG` environment variable. 
 Currently available fields are:
 
+- `max_content_length` - maximum length of request's body. If exceeded, the server returns 413 status.
 - `global_response_headers` - it's a list of key-value pairs, which stand for default response headers appended to every
 `response_headers` HashMap.
 - `access_control`:
@@ -87,7 +88,7 @@ Currently available fields are:
   The certificate must match the private key and a path to it must be relative to the `server_root`.
 
 Drain must be restarted in order for changes to take effect.
-Currently, the optional fields are: `encoding`, `access_control`, `global_response_headers`, `endpoints`, `min_protocol_version`.
+Currently, the optional fields are: `encoding`, `access_control`, `max_content_length`, `global_response_headers`, `endpoints`, `min_protocol_version`.
 
 ## Usage
 

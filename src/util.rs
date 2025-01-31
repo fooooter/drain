@@ -298,14 +298,16 @@ where
             Request::Put {ref mut data, headers, ..} |
             Request::Patch {ref mut data, headers, ..} = &mut request {
         let mut buffer = BytesMut::with_capacity(
-            if let Ok(l) = headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
-                if l != 0 {
+            match headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
+                Ok(l) if l > 0 => {
                     l
-                } else {
+                },
+                Ok(l) if l > CONFIG.get_max_content_length() => {
+                    return Err(ServerError::BodyTooLarge);
+                },
+                _ => {
                     return Err(ServerError::InvalidRequest);
                 }
-            } else {
-                return Err(ServerError::InvalidRequest);
             }
         );
 
@@ -357,7 +359,7 @@ where
         let body: RequestBody;
 
         match headers.get("content-type") {
-            Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded") => {
+            Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded;") => {
                 let x_www_urlencoded_raw = String::from(String::from_utf8_lossy(&payload));
                 let mut body_hm: HashMap<String, String> = HashMap::new();
                 for kv in x_www_urlencoded_raw.split('&') {
@@ -380,7 +382,7 @@ where
                     return Err(ServerError::MalformedPayload);
                 };
 
-                if !content_type.trim_end().starts_with("multipart/form-data") {
+                if !content_type.trim_end().eq("multipart/form-data") {
                     return Err(ServerError::UnsupportedMediaType);
                 }
 

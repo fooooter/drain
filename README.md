@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.0.8-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.0.9-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -158,7 +158,7 @@ pub enum RequestData<'a> {
 POST body consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
 are `application/x-www-form-urlencoded` and `multipart/form-data` represented by `XWWWFormUrlEncoded` and `FormData` `RequestBody` enum variants respectively.
 
-`FormDataValue` is a struct containing possible filename of the data segment and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
+`FormDataValue` is a struct containing possible filename of the data segment, its headers and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
 in `XWWWFormUrlEncoded`, where binary data are encoded using URL encoding.
 
 ```rust

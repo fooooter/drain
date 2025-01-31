@@ -9,7 +9,8 @@ pub enum ServerError {
     UnsupportedEncoding,
     UnsupportedMediaType,
     MalformedPayload,
-    InvalidRequest
+    InvalidRequest,
+    BodyTooLarge
 }
 
 impl Display for ServerError {
@@ -20,7 +21,8 @@ impl Display for ServerError {
             ServerError::UnsupportedEncoding => write!(f, "Payload was encoded in an unsupported encoding."),
             ServerError::UnsupportedMediaType => write!(f, "Payload contained data in an unsupported media type."),
             ServerError::MalformedPayload => write!(f, "Payload contained malformed data."),
-            ServerError::InvalidRequest => write!(f, "A request was malformed.")
+            ServerError::InvalidRequest => write!(f, "A request was malformed."),
+            ServerError::BodyTooLarge => write!(f, "Content sent by the client was too large.")
         }
     }
 }

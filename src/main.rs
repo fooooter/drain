@@ -92,7 +92,10 @@ where
                     ]);
 
                     send_response(&mut stream, 415, Some(response_headers), None, None).await?
-                }
+                },
+                ServerError::BodyTooLarge => {
+                    send_response(&mut stream, 413, None, None, None).await?
+                },
                 _ => {
                     internal_server_error(&mut stream).await?;
                 }

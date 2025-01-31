@@ -33,6 +33,7 @@ pub struct Https {
 
 #[derive(Deserialize)]
 pub struct Config {
+    max_content_length: Option<usize>,
     pub global_response_headers: Option<HashMap<String, String>>,
     pub access_control: Option<AccessControl>,
     pub bind_host: String,
@@ -122,6 +123,13 @@ impl Config {
         }
 
         config
+    }
+
+    pub fn get_max_content_length(&self) -> usize {
+        if let Some(max_content_length) = self.max_content_length {
+            return max_content_length;
+        }
+        1073741824
     }
 
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {

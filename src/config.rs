@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::LazyLock;
 use glob::glob;
+use openssl::error::ErrorStack;
+use openssl::ssl::{select_next_proto, AlpnError, Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -43,7 +45,7 @@ pub struct Config {
     pub encoding: Option<Encoding>,
     pub document_root: String,
     pub server_root: String,
-    pub https: Https
+    pub https: Option<Https>
 }
 
 impl Config {
@@ -199,5 +201,47 @@ impl AccessControl {
             }
         }
         true
+    }
+}
+
+impl Https {
+    pub fn configure_ssl(&self) -> Result<Ssl, ErrorStack> {
+        let server_root = &CONFIG.server_root;
+        let mut ssl_ctx_builder = SslContext::builder(SslMethod::tls())?;
+
+        ssl_ctx_builder.set_private_key_file(format!("{}/{}", server_root, &self.ssl_private_key_file), SslFiletype::PEM)?;
+        ssl_ctx_builder.set_certificate_file(format!("{}/{}", server_root, &self.ssl_certificate_file), SslFiletype::PEM)?;
+        ssl_ctx_builder.check_private_key()?;
+
+        ssl_ctx_builder.set_min_proto_version(
+            match &self.min_protocol_version {
+                Some(min_proto_version) if min_proto_version.eq("SSL3") => Some(SslVersion::SSL3),
+                Some(min_proto_version) if min_proto_version.eq("TLS1.3") => Some(SslVersion::TLS1_3),
+                Some(min_proto_version) if min_proto_version.eq("TLS1") => Some(SslVersion::TLS1),
+                Some(min_proto_version) if min_proto_version.eq("DTLS1") => Some(SslVersion::DTLS1),
+                Some(min_proto_version) if min_proto_version.eq("DTLS1.2") => Some(SslVersion::DTLS1_2),
+                Some(min_proto_version) if min_proto_version.eq("TLS1.1") => Some(SslVersion::TLS1_1),
+                Some(min_proto_version) if min_proto_version.eq("TLS1.2") => Some(SslVersion::TLS1_2),
+                Some(_) | None => None
+            }
+        )?;
+
+        if let Some(SslVersion::TLS1_3) = ssl_ctx_builder.min_proto_version() {
+            ssl_ctx_builder.set_ciphersuites(&self.cipher_list)?;
+        } else {
+            ssl_ctx_builder.set_cipher_list(&self.cipher_list)?;
+        }
+
+        ssl_ctx_builder.set_verify(SslVerifyMode::PEER);
+        ssl_ctx_builder.set_alpn_select_callback(|_ssl, client_protocols| {
+            if let Some(p) = select_next_proto(b"\x08http/1.1", client_protocols) {
+                Ok(p)
+            } else {
+                Err(AlpnError::ALERT_FATAL)
+            }
+        });
+
+        let ssl_ctx = ssl_ctx_builder.build();
+        Ssl::new(&ssl_ctx)
     }
 }

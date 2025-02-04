@@ -25,8 +25,8 @@ where
         Ok(request) => {
             match request {
                 Get {resource, params, headers} => handle_get(stream, &headers, resource, &params).await,
-                Head {resource, headers} => handle_head(stream, &headers, resource).await,
-                Post {resource, headers, data} => handle_post(stream, &headers, resource, &data).await,
+                Head {resource, params, headers} => handle_head(stream, &headers, resource, &params).await,
+                Post {resource, params, headers, data} => handle_post(stream, &headers, resource, &data, &params).await,
                 Options {..} => handle_options(stream).await,
                 _ => {
                     let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);

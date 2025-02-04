@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.1.0-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.1.2-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -123,8 +123,8 @@ pub fn index() {
             </body>
         </html>"#, match request_data {
         Get(_) => "GET",
-        Post(_) => "POST",
-        Head => "HEAD"
+        Post {..} => "POST",
+        Head(_) => "HEAD"
     }));
   
     set_header!("Content-Type", "text/html; charset=utf-8");
@@ -151,12 +151,12 @@ request headers and data specific to each variant.
 ```rust
 pub enum RequestData<'a> {
     Get(&'a Option<HashMap<String, String>>),
-    Post(&'a Option<RequestBody>),
-    Head
+    Post {data: &'a Option<RequestBody>, params: &'a Option<HashMap<String, String>>},
+    Head(&'a Option<HashMap<String, String>>)
 }
 ```
 
-POST body consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
+POST `data` consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
 are `application/x-www-form-urlencoded` and `multipart/form-data` represented by `XWWWFormUrlEncoded` and `FormData` `RequestBody` enum variants respectively.
 
 `FormDataValue` is a struct containing possible filename of the data segment, its headers and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
@@ -174,7 +174,7 @@ pub enum RequestBody {
 }
 ```
 
-GET params are regular key-value pairs sent in the URL represented by a HashMap.
+`params` are regular key-value pairs sent in the URL represented by a HashMap. 
 
 ### Headers
 

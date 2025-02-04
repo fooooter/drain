@@ -19,8 +19,8 @@ use drain_common::cookies::SetCookie;
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
-    Head {resource: String, headers: HashMap<String, String>},
-    Post {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
+    Head {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
+    Post {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
     Put {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
     Delete {resource: String, headers: HashMap<String, String>},
     Connect {resource: String, headers: HashMap<String, String>},
@@ -76,8 +76,8 @@ impl Request {
 
         let req = match req_type.trim() {
             "GET" => Self::Get {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
-            "HEAD" => Self::Head {resource, headers},
-            "POST" => Self::Post {resource, headers, data: None},
+            "HEAD" => Self::Head {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
+            "POST" => Self::Post {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
             "PUT" => Self::Put {resource, headers, data: None},
             "DELETE" => Self::Delete {resource, headers},
             "CONNECT" => Self::Connect {resource, headers},
@@ -263,7 +263,7 @@ where
     }
 }
 
-pub async fn handle_head<T>(mut stream: T, headers: &HashMap<String, String>, mut resource: String) -> Result<(), Box<dyn Error>>
+pub async fn handle_head<T>(mut stream: T, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -307,7 +307,7 @@ where
     if let Some(endpoints) = &CONFIG.endpoints {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            match endpoint(&*resource, &mut stream, Head, headers, &mut response_headers, &mut set_cookie).await {
+            match endpoint(&*resource, &mut stream, Head(params), headers, &mut response_headers, &mut set_cookie).await {
                 Ok(content) => {
                     if let Some(c) = content {
                         let content_length = c.len().to_string();
@@ -360,7 +360,7 @@ where
     }
 }
 
-pub async fn handle_post<'a, T>(mut stream: T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>) -> Result<(), Box<dyn Error>>
+pub async fn handle_post<'a, T>(mut stream: T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -376,7 +376,7 @@ where
             let content = endpoint(
                 if deny_action == 404 { "not_found" } else { "forbidden" },
                 &mut stream,
-                Post(&None),
+                Post {data: &None, params: &None},
                 headers,
                 &mut response_headers,
                 &mut set_cookie).await;
@@ -429,7 +429,7 @@ where
     if let Some(endpoints) = &CONFIG.endpoints {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(&*resource, &mut stream, Post(data), headers, &mut response_headers, &mut set_cookie).await;
+            let content = endpoint(&*resource, &mut stream, Post {data, params}, headers, &mut response_headers, &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -510,7 +510,7 @@ where
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint("not_found", &mut stream, Post(data), headers, &mut response_headers, &mut set_cookie).await;
+            let content = endpoint("not_found", &mut stream, Post {data, params}, headers, &mut response_headers, &mut set_cookie).await;
             let content_type = response_headers.get("content-type");
 
             if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {

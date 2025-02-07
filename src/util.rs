@@ -183,7 +183,7 @@ where
                     }
                 } else if encoding.eq("br") {
                     if let Err(e) = BrotliCompress(&mut content_trim, &mut content_prepared, &BrotliEncoderParams::default()) {
-                        eprintln!("[send_response():{}] An error occurred while compressing the content of a response using GZIP:\n{e}\n\
+                        eprintln!("[send_response():{}] An error occurred while compressing the content of a response using Brotli:\n{e}\n\
                                     Attempting to send uncompressed data...", line!());
                         content_prepared = Vec::from(c.trim_ascii());
                     }
@@ -335,7 +335,7 @@ where
                     }
                 } else if content_encoding.eq("br") {
                     if let Err(e) = BrotliDecompress(&mut &*buffer, &mut payload) {
-                        eprintln!("[receive_request():{}] An error occurred while decompressing the request body using GZIP:\n{e}\n\
+                        eprintln!("[receive_request():{}] An error occurred while decompressing the request body using Brotli:\n{e}\n\
                                     Sending 406 status to the client...", line!());
 
                         return Err(ServerError::DecompressionError(e));

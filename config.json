@@ -12,7 +12,7 @@
     }
   },
   "bind_host": "127.0.0.1",
-  "bind_port": "80",
+  "bind_port": 80,
   "endpoints": [
     "index"
   ],
@@ -34,7 +34,7 @@
   "server_root": "/usr/local/etc/drain",
   "https": {
     "enabled": true,
-    "bind_port": "443",
+    "bind_port": 443,
     "min_protocol_version": "TLS1.3",
     "cipher_list": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
     "ssl_private_key_file": "key.pem",

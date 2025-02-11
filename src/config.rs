@@ -26,7 +26,7 @@ pub struct Encoding {
 #[derive(Deserialize)]
 pub struct Https {
     pub enabled: bool,
-    pub bind_port: String,
+    pub bind_port: u16,
     pub min_protocol_version: Option<String>,
     pub cipher_list: String,
     pub ssl_private_key_file: String,
@@ -39,7 +39,7 @@ pub struct Config {
     pub global_response_headers: Option<HashMap<String, String>>,
     pub access_control: Option<AccessControl>,
     pub bind_host: String,
-    pub bind_port: String,
+    pub bind_port: u16,
     pub endpoints: Option<Vec<String>>,
     pub endpoints_library: String,
     pub encoding: Option<Encoding>,

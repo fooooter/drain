@@ -18,7 +18,7 @@
 [✖]     HTTP/3<br>
 
 
-## This project aims to be similar to PHP/React.js, mainly in terms of dynamically generated web pages and endpoints.
+## About Drain
 
 Dynamic pages/endpoints are generated inside a dynamic library, so that it's easy to create them without modifying
 the core and recompiling the server only to change one thing on a page or inside the endpoint.
@@ -29,6 +29,8 @@ Drain should work properly under every POSIX-compatible OS like Linux (under whi
 On Windows it works properly unless you have to use the SSL.
 
 ## Dependencies
+
+### DISCLAIMER: It's discouraged to use crates.io package for stuff other than testing, because it's been provided with statically linked OpenSSL. Try to build Drain from GitHub repository when possible.
 
 Currently only OpenSSL and libc.
 

@@ -10,7 +10,7 @@ use tokio::net::*;
 use tokio::*;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_openssl::SslStream;
-use crate::requests::Request::{Get, Head, Options, Post};
+use crate::requests::Request::{Get, Head, Options, Post, Trace};
 use crate::requests::*;
 use crate::util::*;
 use crate::config::CONFIG;
@@ -28,8 +28,17 @@ where
                 Head {resource, params, headers} => handle_head(stream, &headers, resource, &params).await,
                 Post {resource, params, headers, data} => handle_post(stream, &headers, resource, &data, &params).await,
                 Options {..} => handle_options(stream).await,
+                Trace(request) if CONFIG.enable_trace => {
+                    let response_headers: HashMap<String, String> = HashMap::from([
+                        (String::from("Content-Type"), String::from("message/http"))
+                    ]);
+
+                    send_response(&mut stream, 200, Some(response_headers), Some(request), None).await
+                }
                 _ => {
-                    let accept_header = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
+                    let accept_header = HashMap::from([
+                        (String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))
+                    ]);
 
                     send_response(&mut stream, 405, Some(accept_header), None, None).await
                 }
@@ -74,6 +83,8 @@ async fn main() -> io::Result<()> {
     } else {
         println!("Encoding disabled.");
     }
+
+    println!("TRACE HTTP method is {}.", if CONFIG.enable_trace {"enabled"} else {"disabled"});
 
     match &CONFIG.https {
         Some(https) if https.enabled => {

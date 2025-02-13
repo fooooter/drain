@@ -1,10 +1,11 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.1.3-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.1.5-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
 [✔]   	OPTIONS<br>
 [✔]   	HEAD<br>
 [✔]   	POST<br>
+[✔]   	TRACE<br>
 [✔]	Auto-detect MIME types<br>
 [✔]	Cookies<br>
 [✖]		Sessions<br>
@@ -29,7 +30,7 @@ On Windows it works properly unless you have to use the SSL.
 
 ## Dependencies
 
-Currently only OpenSSL and glibc.
+Currently only OpenSSL and libc.
 
 ## Build
 
@@ -86,9 +87,11 @@ Currently available fields are:
   A path to it must be relative to the `server_root`.
   * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled). 
   The certificate must match the private key and a path to it must be relative to the `server_root`.
+- `enable_trace` - whether to enable TRACE HTTP method or not. TRACE method is considered not very safe, so it's false by default 
+  (when false, the server returns 405 status).
 
 Drain must be restarted in order for changes to take effect.
-Currently, the optional fields are: `encoding`, `access_control`, `max_content_length`, `https`, `global_response_headers`, `endpoints`, `min_protocol_version`.
+Currently, the required fields are: `bind_host`, `bind_port`, `endpoints_library`, `document_root` and `server_root`.
 
 ## Usage
 

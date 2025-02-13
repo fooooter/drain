@@ -302,7 +302,7 @@ where
                 Ok(l) if l > 0 => {
                     l
                 },
-                Ok(l) if l > CONFIG.get_max_content_length() => {
+                Ok(l) if l > CONFIG.max_content_length => {
                     return Err(ServerError::BodyTooLarge);
                 },
                 _ => {

@@ -22,17 +22,17 @@ pub enum Request {
     Head {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
     Post {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
     Put {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
-    Delete {resource: String, headers: HashMap<String, String>},
-    Connect {resource: String, headers: HashMap<String, String>},
+    Delete,
+    Connect,
     Options {resource: String, headers: HashMap<String, String>},
-    Trace {resource: String, headers: HashMap<String, String>},
+    Trace(Vec<u8>),
     Patch {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
 }
 
 impl Request {
     pub fn parse_from_string(request_string: &String) -> Result<Self, ServerError> {
         let general_regex = Regex::new(
-            r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(((([A-Za-z0-9\-_]*\.[[:alnum:]]+/?)+)+|([A-Za-z0-9\-_]+/?)+)+(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
+        r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(((([A-Za-z0-9\-_]*\.[[:alnum:]]+/?)+)+|([A-Za-z0-9\-_]+/?)+)+(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
         ).unwrap();
 
         if !general_regex.is_match(request_string.as_str()) {
@@ -48,6 +48,10 @@ impl Request {
         let resource_with_params = iter_req_line.next().unwrap().trim();
         let mut resource = String::from(resource_with_params);
         let mut params: HashMap<String, String> = HashMap::new();
+
+        if req_type.eq("TRACE") {
+            return Ok(Self::Trace(Vec::from(request_string.as_bytes())));
+        }
 
         if request_line.contains('?') {
             let resource_split = resource_with_params.split_once('?').unwrap();
@@ -79,10 +83,9 @@ impl Request {
             "HEAD" => Self::Head {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "POST" => Self::Post {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
             "PUT" => Self::Put {resource, headers, data: None},
-            "DELETE" => Self::Delete {resource, headers},
-            "CONNECT" => Self::Connect {resource, headers},
+            "DELETE" => Self::Delete,
+            "CONNECT" => Self::Connect,
             "OPTIONS" => Self::Options {resource, headers},
-            "TRACE" => Self::Trace {resource, headers},
             "PATCH" => Self::Patch {resource, headers, data: None},
             _ => return Err(ServerError::InvalidRequest),
         };
@@ -537,7 +540,9 @@ pub async fn handle_options<T>(mut stream: T) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
-    let response_headers = HashMap::from([(String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))]);
+    let response_headers = HashMap::from([
+        (String::from("Accept"), format!("GET, HEAD, POST, OPTIONS{}", if CONFIG.enable_trace {", TRACE"} else {""}))
+    ]);
 
     send_response(&mut stream,204, Some(response_headers), None, None).await
 }

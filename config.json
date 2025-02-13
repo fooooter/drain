@@ -39,5 +39,6 @@
     "cipher_list": "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
     "ssl_private_key_file": "key.pem",
     "ssl_certificate_file": "cert.pem"
-  }
+  },
+  "enable_trace": false
 }

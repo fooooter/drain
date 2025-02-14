@@ -9,14 +9,11 @@ use brotli::enc::BrotliEncoderParams;
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use libloading::{Library, Error as LibError};
-use openssl::hash::{hash, MessageDigest};
-use openssl::base64;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use tokio::io::AsyncWriteExt;
 use bstr::ByteSlice;
 use bytes::BytesMut;
-use openssl::error::ErrorStack;
 use drain_common::cookies::{SetCookie, SameSite};
 use drain_common::{FormDataValue, RequestBody, RequestData};
 use drain_common::RequestBody::{FormData, XWWWFormUrlEncoded};
@@ -34,7 +31,7 @@ pub static HEADERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
 pub async fn send_response<T>(stream: &mut T,
                               status: u16,
-                              mut local_response_headers: Option<HashMap<String, String>>,
+                              local_response_headers: Option<HashMap<String, String>>,
                               content: Option<Vec<u8>>,
                               set_cookie: Option<HashMap<String, SetCookie>>) -> Result<(), Box<dyn Error>>
 where
@@ -163,75 +160,59 @@ where
 
     let mut response_bytes: Vec<u8>;
 
-    match (&mut local_response_headers, content) {
-        (Some(ref mut h), Some(c)) => {
+    match (local_response_headers, content) {
+        (Some(ref mut h), Some(mut c)) => {
             h.extend(global_response_headers);
 
             for (k, v) in &mut *h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
 
-            let mut content_trim = c.trim_ascii();
+            if c.is_utf8() {
+                c = Vec::from(c.trim_ascii());
+            }
+
             let mut content_prepared: Vec<u8> = Vec::new();
 
             if let Some(encoding) = h.get("Content-Encoding") {
                 if encoding.eq("gzip") {
-                    if let Err(e) = GzEncoder::new(content_trim, Compression::default()).read_to_end(&mut content_prepared) {
+                    if let Err(e) = GzEncoder::new(&*c, Compression::default()).read_to_end(&mut content_prepared) {
                         eprintln!("[send_response():{}] An error occurred while compressing the content of a response using GZIP:\n{e}\n\
                                     Attempting to send uncompressed data...", line!());
-                        content_prepared = Vec::from(c.trim_ascii());
+                        content_prepared = c;
                     }
                 } else if encoding.eq("br") {
-                    if let Err(e) = BrotliCompress(&mut content_trim, &mut content_prepared, &BrotliEncoderParams::default()) {
+                    if let Err(e) = BrotliCompress(&mut (c.as_bytes()), &mut content_prepared, &BrotliEncoderParams::default()) {
                         eprintln!("[send_response():{}] An error occurred while compressing the content of a response using Brotli:\n{e}\n\
                                     Attempting to send uncompressed data...", line!());
-                        content_prepared = Vec::from(c.trim_ascii());
+                        content_prepared = c;
                     }
                 } else {
-                    content_prepared = Vec::from(c.trim_ascii());
+                    content_prepared = c;
                 }
             } else {
-                content_prepared = Vec::from(c.trim_ascii());
+                content_prepared = c;
             }
 
-            let content_length_header = format!("Content-Length: {}\r\n", content_prepared.len());
+            let content_length_header = format!("Content-Length: {}\r\n\r\n", content_prepared.len());
             response.push_str(&*content_length_header);
-
-            match generate_etag(&*content_prepared) {
-                Ok(etag) => {
-                    let etag_header = format!("ETag: {etag}\r\n\r\n");
-                    response.push_str(&*etag_header);
-                },
-                Err(e) => {
-                    eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
-                                Continuing without ETag...", line!());
-                }
-            }
 
             response_bytes = Vec::from(response);
             for x in content_prepared {
                 response_bytes.push(x);
             }
         },
-        (None, Some(c)) => {
-            let content_trim = c.trim_ascii_start();
-            let content_length_header = format!("Content-Length: {}\r\n", content_trim.len());
-            response.push_str(&*content_length_header);
-
-            match generate_etag(content_trim) {
-                Ok(etag) => {
-                    let etag_header = format!("ETag: {etag}\r\n\r\n");
-                    response.push_str(&*etag_header);
-                },
-                Err(e) => {
-                    eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
-                                Continuing without ETag...", line!());
-                }
+        (None, Some(mut c)) => {
+            if c.is_utf8() {
+                c = Vec::from(c.trim_ascii());
             }
 
+            let content_length_header = format!("Content-Length: {}\r\n\r\n", c.len());
+            response.push_str(&*content_length_header);
+
             response_bytes = Vec::from(response);
-            for x in content_trim {
-                response_bytes.push(*x);
+            for x in c {
+                response_bytes.push(x);
             }
         },
         (Some(ref mut h), None) => {
@@ -459,10 +440,6 @@ where
         *data = Some(body);
     }
     Ok(request)
-}
-
-pub fn generate_etag(content: &[u8]) -> Result<String, ErrorStack>  {
-    Ok(base64::encode_block(&*hash(MessageDigest::md5(), content)?))
 }
 
 pub async fn rte_wrapper<T>(f: &mut File, buf: &mut Vec<u8>, stream: &mut T)

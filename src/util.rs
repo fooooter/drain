@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::Read;
 use std::sync::LazyLock;
@@ -9,9 +9,13 @@ use brotli::enc::BrotliEncoderParams;
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use libloading::{Library, Error as LibError};
+use openssl::hash::{hash, MessageDigest};
+use openssl::base64;
+use openssl::error::ErrorStack;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 use bstr::ByteSlice;
 use bytes::BytesMut;
 use drain_common::cookies::{SetCookie, SameSite};
@@ -29,11 +33,25 @@ pub static HEADERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: ?)([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)$"#).unwrap()
 });
 
+pub static ETAGS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| {
+   Mutex::new(HashSet::new())
+});
+
+pub fn generate_etag(content: &[u8]) -> Result<String, ErrorStack>  {
+    Ok(base64::encode_block(&*hash(MessageDigest::md5(), content)?))
+}
+
+pub enum ResourceType {
+    Static,
+    Dynamic
+}
+
 pub async fn send_response<T>(stream: &mut T,
                               status: u16,
                               local_response_headers: Option<HashMap<String, String>>,
                               content: Option<Vec<u8>>,
-                              set_cookie: Option<HashMap<String, SetCookie>>) -> Result<(), Box<dyn Error>>
+                              set_cookie: Option<HashMap<String, SetCookie>>,
+                              resource_type: Option<ResourceType>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -109,6 +127,11 @@ where
     let date_header = format!("Date: {}\r\n", date);
     response.push_str(&*date_header);
 
+    if CONFIG.enable_server_header {
+        let server_header = format!("Server: Drain {}\r\n", env!("CARGO_PKG_VERSION"));
+        response.push_str(&*server_header);
+    }
+
     let global_response_headers = if let Some(global_response_headers) = &CONFIG.global_response_headers {
         global_response_headers.clone()
     } else {
@@ -172,6 +195,24 @@ where
                 c = Vec::from(c.trim_ascii());
             }
 
+            if let Some(ResourceType::Static) = resource_type {
+                match generate_etag(&*c) {
+                    Ok(etag) => {
+                        let mut etags = ETAGS.lock().await;
+
+                        let etag_header = format!("ETag: {etag}\r\n");
+                        etags.insert(etag);
+                        response.push_str(&*etag_header);
+                    },
+                    Err(e) => {
+                        if CONFIG.be_verbose {
+                            eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
+                                        Continuing without ETag...", line!());
+                        }
+                    }
+                }
+            }
+
             let mut content_prepared: Vec<u8> = Vec::new();
 
             if let Some(encoding) = h.get("Content-Encoding") {
@@ -205,6 +246,24 @@ where
         (None, Some(mut c)) => {
             if c.is_utf8() {
                 c = Vec::from(c.trim_ascii());
+            }
+
+            if let Some(ResourceType::Static) = resource_type {
+                match generate_etag(&*c) {
+                    Ok(etag) => {
+                        let mut etags = ETAGS.lock().await;
+
+                        let etag_header = format!("ETag: {etag}\r\n");
+                        etags.insert(etag);
+                        response.push_str(&*etag_header);
+                    },
+                    Err(e) => {
+                        if CONFIG.be_verbose {
+                            eprintln!("[send_response():{}] An error occurred while generating an ETag:\n{e}\n\
+                                        Continuing without ETag...", line!());
+                        }
+                    }
+                }
             }
 
             let content_length_header = format!("Content-Length: {}\r\n\r\n", c.len());

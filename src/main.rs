@@ -4,6 +4,7 @@ mod pages;
 mod config;
 mod error;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::pin::Pin;
 use tokio::net::*;
@@ -16,6 +17,7 @@ use crate::util::*;
 use crate::config::CONFIG;
 use crate::error::ServerError;
 use crate::pages::internal_server_error::internal_server_error;
+use crate::util::ResourceType::Dynamic;
 
 async fn handle_connection<T>(mut stream: T) -> Result<(), Box<dyn Error>>
 where
@@ -33,24 +35,24 @@ where
                         (String::from("Content-Type"), String::from("message/http"))
                     ]);
 
-                    send_response(&mut stream, 200, Some(response_headers), Some(request), None).await
+                    send_response(&mut stream, 200, Some(response_headers), Some(request), None, Some(Dynamic)).await
                 }
                 _ => {
                     let accept_header = HashMap::from([
                         (String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))
                     ]);
 
-                    send_response(&mut stream, 405, Some(accept_header), None, None).await
+                    send_response(&mut stream, 405, Some(accept_header), None, None, None).await
                 }
             }
         },
         Err(e) => {
             match e {
                 ServerError::DecompressionError(..) | ServerError::UnsupportedEncoding => {
-                    send_response(&mut stream, 406, None, None, None).await?
+                    send_response(&mut stream, 406, None, None, None, None).await?
                 },
                 ServerError::InvalidRequest | ServerError::MalformedPayload => {
-                    send_response(&mut stream, 400, None, None, None).await?
+                    send_response(&mut stream, 400, None, None, None, None).await?
                 },
                 ServerError::UnsupportedMediaType => {
                     let response_headers: HashMap<String, String> = HashMap::from([
@@ -58,10 +60,10 @@ where
                         (String::from("Vary"), String::from("Content-Type"))
                     ]);
 
-                    send_response(&mut stream, 415, Some(response_headers), None, None).await?
+                    send_response(&mut stream, 415, Some(response_headers), None, None, None).await?
                 },
                 ServerError::BodyTooLarge => {
-                    send_response(&mut stream, 413, None, None, None).await?
+                    send_response(&mut stream, 413, None, None, None, None).await?
                 },
                 _ => {
                     internal_server_error(&mut stream).await?;
@@ -78,13 +80,18 @@ async fn main() -> io::Result<()> {
 
     let bind_host = &CONFIG.bind_host;
 
-    if let Some(encoding) = &CONFIG.encoding {
-        println!("Encoding enabled and set to \"{}\".", encoding.use_encoding);
-    } else {
-        println!("Encoding disabled.");
-    }
+    if CONFIG.be_verbose {
+        if let Some(encoding) = &CONFIG.encoding {
+            println!("Encoding enabled and set to \"{}\".", encoding.use_encoding);
+        } else {
+            println!("Encoding disabled.");
+        }
 
-    println!("TRACE HTTP method is {}.", if CONFIG.enable_trace {"enabled"} else {"disabled"});
+        println!("TRACE HTTP method is {}.\n\
+                  Server header {} be sent.",
+                if CONFIG.enable_trace { "enabled" } else { "disabled" },
+                if CONFIG.enable_server_header { "will" } else { "won't" });
+    }
 
     match &CONFIG.https {
         Some(https) if https.enabled => {

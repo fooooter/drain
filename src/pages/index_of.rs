@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fs::read_dir;
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::config::CONFIG;
+use crate::util::ResourceType::Dynamic;
 use crate::util::send_response;
 
 pub async fn index_of<T>(mut stream: &mut T, directory: String, head: bool, headers: &HashMap<String, String>) -> Result<(), Box<dyn Error>>
@@ -67,9 +68,9 @@ where
     }
 
     if !head {
-        return send_response(&mut stream, 200, Some(response_headers), Some(content), None).await;
+        return send_response(&mut stream, 200, Some(response_headers), Some(content), None, Some(Dynamic)).await;
     }
     response_headers.insert(String::from("Content-Length"), content.len().to_string());
 
-    send_response(&mut stream, 200, Some(response_headers), None, None).await
+    send_response(&mut stream, 200, Some(response_headers), None, None, None).await
 }

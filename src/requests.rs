@@ -16,6 +16,7 @@ use crate::pages::internal_server_error::internal_server_error;
 use drain_common::RequestBody;
 use drain_common::RequestData::*;
 use drain_common::cookies::SetCookie;
+use crate::util::ResourceType::{Dynamic, Static};
 
 pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
@@ -120,7 +121,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie)).await
+                    return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
                 };
 
                 if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -128,9 +129,9 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
+                return send_response(&mut stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await
             }
-            return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie)).await
+            return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
         }
     }
 
@@ -171,7 +172,7 @@ where
                         (mime.to_string(), mime.type_().to_string())
                     } else {
                         response_headers.remove(&String::from("content-type"));
-                        return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie)).await
+                        return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie), None).await
                     };
 
                     if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -180,25 +181,25 @@ where
                     }
 
                     if response_headers.contains_key("location") {
-                        return send_response(&mut stream, 302, Some(response_headers), Some(c), Some(set_cookie)).await;
+                        return send_response(&mut stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                     }
 
-                    return send_response(&mut stream, 200, Some(response_headers), Some(c), Some(set_cookie)).await;
+                    return send_response(&mut stream, 200, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 },
                 (Ok(None), _) | (Ok(Some(_)), None) => {
                     if response_headers.contains_key("location") {
-                        return send_response(&mut stream, 302, Some(response_headers), None, Some(set_cookie)).await;
+                        return send_response(&mut stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
                     }
 
-                    return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie)).await;
+                    return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie), None).await;
                 },
                 (Err(e), _) => {
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_get():{}]    An error occurred while opening a dynamic library file.\
-                                                            Check if dynamic_pages_library field in config.json is correct.\n
-                                                            Attempting to send Internal Server Error page to the client...", line!());
+                            eprintln!("[handle_get():{}] An error occurred while opening a dynamic library file.\
+                                                         Check if dynamic_pages_library field in config.json is correct.\
+                                                         Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(&mut stream).await {
                                 eprintln!("[handle_get():{}] FAILED. Error information:\n{e}", line!());
                             }
@@ -239,7 +240,22 @@ where
 
             response_headers.insert(String::from("Content-Type"), guess);
 
-            send_response(&mut stream, 200, Some(response_headers), if !content_empty {Some(content)} else {None}, None).await
+            if content_empty {
+                send_response(&mut stream, 200, Some(response_headers), None, None, None).await
+            } else {
+                if let Some(if_none_match) = headers.get("if-none-match") {
+                    let mut excluded_etags = if_none_match.split(",")
+                        .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
+
+                    let etags = ETAGS.lock().await;
+                    while let Some(etag) = excluded_etags.next() {
+                        if etags.contains(&etag) {
+                            return send_response(&mut stream, 304, Some(response_headers), None, None, None).await;
+                        }
+                    }
+                }
+                send_response(&mut stream, 200, Some(response_headers), Some(content), None, Some(Static)).await
+            }
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
@@ -251,7 +267,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie)).await
+                    return send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await
                 };
 
                 if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -259,9 +275,9 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, 404, Some(response_headers), Some(c), Some(set_cookie)).await;
+                return send_response(&mut stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
             }
-            send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie)).await
+            send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await
         }
     }
 }
@@ -278,7 +294,7 @@ where
     if let Some(access_control) = &CONFIG.access_control {
         if !access_control.is_access_allowed(&resource) {
             let deny_action = access_control.deny_action;
-            return send_response(&mut stream, deny_action, Some(response_headers), None, None).await;
+            return send_response(&mut stream, deny_action, Some(response_headers), None, None, None).await;
         }
     }
 
@@ -318,18 +334,18 @@ where
                     }
 
                     if response_headers.contains_key("location") {
-                        return send_response(&mut stream, 302, Some(response_headers), None, Some(set_cookie)).await;
+                        return send_response(&mut stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
                     }
 
-                    return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie)).await;
+                    return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie), None).await;
                 },
                 Err(e) => {
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_head():{}]   An error occurred while opening a dynamic library file.\
-                                                            Check if dynamic_pages_library field in config.json is correct.\n
-                                                            Attempting to send Internal Server Error page to the client...", line!());
+                            eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file.\
+                                                          Check if dynamic_pages_library field in config.json is correct.\
+                                                          Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(&mut stream).await {
                                 eprintln!("[handle_head():{}] FAILED. Error information:\n{e}", line!());
                             }
@@ -352,13 +368,29 @@ where
             let mut content: Vec<u8> = Vec::new();
             rte_wrapper(&mut f, &mut content, &mut stream).await;
 
-            let content_length = content.len().to_string();
-            response_headers.insert(String::from("Content-Length"), content_length);
+            if content.is_empty() {
+                send_response(&mut stream, 200, None, None, None, None).await
+            } else {
+                if let Some(if_none_match) = headers.get("if-none-match") {
+                    let mut excluded_etags = if_none_match.split(",")
+                        .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
 
-            send_response(&mut stream, 200, Some(response_headers), None, None).await
+                    let etags = ETAGS.lock().await;
+                    while let Some(etag) = excluded_etags.next() {
+                        if etags.contains(&etag) {
+                            return send_response(&mut stream, 304, Some(response_headers), None, None, None).await;
+                        }
+                    }
+                }
+
+                let content_length = content.len().to_string();
+                response_headers.insert(String::from("Content-Length"), content_length);
+
+                send_response(&mut stream, 200, Some(response_headers), None, None, None).await
+            }
         },
         Err(_) => {
-            send_response(&mut stream, 404, Some(response_headers), None, None).await
+            send_response(&mut stream, 404, Some(response_headers), None, None, None).await
         }
     }
 }
@@ -390,7 +422,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie)).await
+                    return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
                 };
 
                 if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -398,9 +430,9 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, deny_action, Some(response_headers), Some(c), Some(set_cookie)).await
+                return send_response(&mut stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await
             }
-            return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie)).await
+            return send_response(&mut stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
         }
     }
 
@@ -441,7 +473,7 @@ where
                         (mime.to_string(), mime.type_().to_string())
                     } else {
                         response_headers.remove(&String::from("content-type"));
-                        return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie)).await
+                        return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie), None).await
                     };
 
                     if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -450,25 +482,25 @@ where
                     }
 
                     if response_headers.contains_key("location") {
-                        return send_response(&mut stream, 302, Some(response_headers), Some(c), Some(set_cookie)).await;
+                        return send_response(&mut stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                     }
 
-                    return send_response(&mut stream, 200, Some(response_headers), Some(c), Some(set_cookie)).await;
+                    return send_response(&mut stream, 200, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 },
                 (Ok(None), _) | (Ok(Some(_)), None) => {
                     if response_headers.contains_key("location") {
-                        return send_response(&mut stream, 302, Some(response_headers), None, Some(set_cookie)).await;
+                        return send_response(&mut stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
                     }
 
-                    return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie)).await;
+                    return send_response(&mut stream, 200, Some(response_headers), None, Some(set_cookie), None).await;
                 },
                 (Err(e), _) => {
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_post():{}]   An error occurred while opening a dynamic library file.\
-                                                            Check if dynamic_pages_library field in config.json is correct.\n
-                                                            Attempting to send Internal Server Error page to the client...", line!());
+                            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file.\
+                                                          Check if dynamic_pages_library field in config.json is correct.\
+                                                          Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(&mut stream).await {
                                 eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
                             }
@@ -509,7 +541,22 @@ where
 
             response_headers.insert(String::from("Content-Type"), guess);
 
-            send_response(&mut stream, 204, Some(response_headers), if !content_empty {Some(content)} else {None}, None).await
+            if content_empty {
+                send_response(&mut stream, 200, Some(response_headers), None, None, None).await
+            } else {
+                if let Some(if_none_match) = headers.get("if-none-match") {
+                    let mut excluded_etags = if_none_match.split(",")
+                        .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
+
+                    let etags = ETAGS.lock().await;
+                    while let Some(etag) = excluded_etags.next() {
+                        if etags.contains(&etag) {
+                            return send_response(&mut stream, 304, Some(response_headers), None, None, None).await;
+                        }
+                    }
+                }
+                send_response(&mut stream, 200, Some(response_headers), Some(content), None, Some(Static)).await
+            }
         },
         Err(_) => {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
@@ -521,7 +568,7 @@ where
                     (mime.to_string(), mime.type_().to_string())
                 } else {
                     response_headers.remove(&String::from("content-type"));
-                    return send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie)).await
+                    return send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie), None).await
                 };
 
                 if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -529,9 +576,9 @@ where
                     response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
 
-                return send_response(&mut stream, 404, Some(response_headers), Some(c), Some(set_cookie)).await;
+                return send_response(&mut stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
             }
-            send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie)).await
+            send_response(&mut stream, 404, Some(response_headers), None, Some(set_cookie), None).await
         }
     }
 }
@@ -544,5 +591,5 @@ where
         (String::from("Accept"), format!("GET, HEAD, POST, OPTIONS{}", if CONFIG.enable_trace {", TRACE"} else {""}))
     ]);
 
-    send_response(&mut stream,204, Some(response_headers), None, None).await
+    send_response(&mut stream,204, Some(response_headers), None, None, None).await
 }

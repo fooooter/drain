@@ -35,7 +35,7 @@ pub struct Https {
 
 #[derive(Deserialize)]
 pub struct Config {
-    #[serde(default = "Config::get_default_max_content_length")]
+    #[serde(default = "Config::default_max_content_length")]
     pub max_content_length: usize,
     pub global_response_headers: Option<HashMap<String, String>>,
     pub access_control: Option<AccessControl>,
@@ -48,8 +48,13 @@ pub struct Config {
     pub server_root: String,
     pub https: Option<Https>,
     #[serde(default)]
-    pub enable_trace: bool
+    pub enable_trace: bool,
+    #[serde(default = "Config::default_server_header_state")]
+    pub enable_server_header: bool,
+    #[serde(default)]
+    pub be_verbose: bool
 }
+
 impl Config {
     pub async fn new() -> Self {
         let config_path = env::var("DRAIN_CONFIG");
@@ -129,8 +134,12 @@ impl Config {
         config
     }
 
-    const fn get_default_max_content_length() -> usize {
+    const fn default_max_content_length() -> usize {
         1073741824
+    }
+
+    const fn default_server_header_state() -> bool {
+        true
     }
 
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {

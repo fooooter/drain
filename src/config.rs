@@ -43,6 +43,8 @@ pub struct Config {
     pub bind_port: u16,
     pub endpoints: Option<Vec<String>>,
     pub endpoints_library: String,
+    #[serde(default = "Config::default_cache_max_age")]
+    pub cache_max_age: u64,
     pub encoding: Option<Encoding>,
     pub document_root: String,
     pub server_root: String,
@@ -140,6 +142,10 @@ impl Config {
 
     const fn default_server_header_state() -> bool {
         true
+    }
+
+    const fn default_cache_max_age() -> u64 {
+        3600
     }
 
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {

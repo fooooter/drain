@@ -200,9 +200,9 @@ where
                     Ok(etag) => {
                         let mut etags = ETAGS.lock().await;
 
-                        let etag_header = format!("ETag: {etag}\r\n");
+                        let etag_cache_headers = format!("ETag: {etag}\r\nCache-Control: max-age={}\r\n", CONFIG.cache_max_age);
                         etags.insert(etag);
-                        response.push_str(&*etag_header);
+                        response.push_str(&*etag_cache_headers);
                     },
                     Err(e) => {
                         if CONFIG.be_verbose {
@@ -253,9 +253,9 @@ where
                     Ok(etag) => {
                         let mut etags = ETAGS.lock().await;
 
-                        let etag_header = format!("ETag: {etag}\r\n");
+                        let etag_cache_headers = format!("ETag: {etag}\r\nCache-Control: max-age={}\r\n", CONFIG.cache_max_age);
                         etags.insert(etag);
-                        response.push_str(&*etag_header);
+                        response.push_str(&*etag_cache_headers);
                     },
                     Err(e) => {
                         if CONFIG.be_verbose {

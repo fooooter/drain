@@ -221,7 +221,6 @@ where
         Ok(mut f) => {
             let mut content: Vec<u8> = Vec::new();
             rte_wrapper(&mut f, &mut content, &mut stream).await;
-            let content_empty = content.is_empty();
 
             let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
                 (guess.to_string(), guess.type_().to_string())
@@ -240,7 +239,7 @@ where
 
             response_headers.insert(String::from("Content-Type"), guess);
 
-            if content_empty {
+            if content.is_empty() {
                 send_response(&mut stream, 200, Some(response_headers), None, None, None).await
             } else {
                 if let Some(if_none_match) = headers.get("if-none-match") {
@@ -250,6 +249,9 @@ where
                     let etags = ETAGS.lock().await;
                     while let Some(etag) = excluded_etags.next() {
                         if etags.contains(&etag) {
+                            response_headers.insert(String::from("ETag"), etag);
+                            response_headers.insert(String::from("Cache-Control"), format!("max-age={}", CONFIG.cache_max_age));
+
                             return send_response(&mut stream, 304, Some(response_headers), None, None, None).await;
                         }
                     }
@@ -371,18 +373,6 @@ where
             if content.is_empty() {
                 send_response(&mut stream, 200, None, None, None, None).await
             } else {
-                if let Some(if_none_match) = headers.get("if-none-match") {
-                    let mut excluded_etags = if_none_match.split(",")
-                        .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
-
-                    let etags = ETAGS.lock().await;
-                    while let Some(etag) = excluded_etags.next() {
-                        if etags.contains(&etag) {
-                            return send_response(&mut stream, 304, Some(response_headers), None, None, None).await;
-                        }
-                    }
-                }
-
                 let content_length = content.len().to_string();
                 response_headers.insert(String::from("Content-Length"), content_length);
 
@@ -551,6 +541,9 @@ where
                     let etags = ETAGS.lock().await;
                     while let Some(etag) = excluded_etags.next() {
                         if etags.contains(&etag) {
+                            response_headers.insert(String::from("ETag"), etag);
+                            response_headers.insert(String::from("Cache-Control"), format!("max-age={}", CONFIG.cache_max_age));
+
                             return send_response(&mut stream, 304, Some(response_headers), None, None, None).await;
                         }
                     }

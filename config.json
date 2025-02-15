@@ -17,6 +17,7 @@
     "index"
   ],
   "endpoints_library": "libdynamic_pages.so",
+  "cache_max_age": 3600,
   "encoding": {
     "supported_encodings":  ["gzip", "br"],
     "use_encoding": "br",

@@ -56,6 +56,7 @@ Currently available fields are:
 - `bind_port` - bind port to the server (HTTP). If you want to use 80, be sure to start the server as root or another privileged user.
 - `endpoints` - holds a list of every dynamic page/endpoint available, so if you create one, be sure to specify it here!
 - `endpoint_library` - a path to the dynamic library for dynamic pages/endpoints, which must be relative to the `server_root`.
+- `cache_max_age` - max-age in `Cache-Control` header. Applied automatically only for static resources. Default is 3600 seconds (1 hour).
 - `encoding`:
   * `use_encoding` - a name of encoding which will be used to compress the response body. It should be present in `supported_encodings`, otherwise the server will return uncompressed data.
   * `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".

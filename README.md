@@ -8,7 +8,7 @@
 [✔]   	TRACE<br>
 [✔]	Auto-detect MIME types<br>
 [✔]	Cookies<br>
-[✖]		Sessions<br>
+[✔]	Sessions<br>
 [✔]	Config (now JSON)<br>
 [✔]     Compression (GZIP and Brotli for now)<br>
 [✔]     Decompression (GZIP and Brotli for now)<br>
@@ -109,6 +109,10 @@ It's strongly advised to use a template - https://github.com/fooooter/drain_page
 
 Stick to the macro library if possible - https://github.com/fooooter/drain_macros
 
+### `drain_common` library crate
+
+Some things (i.e. cookies and sessions), that are mentioned from this point forward, are coming from `drain_common` crate - https://github.com/fooooter/drain_common
+
 ### Structure
 
 Each endpoint should be a Rust module defined in a separate file, declared in lib.rs and have the following structure:
@@ -191,6 +195,29 @@ so that you can simply append a header to existing ones. Its best use cases are 
 changing content type to JSON, for example. `Content-Type` header must be set explicitly, otherwise an empty page will be returned.
 `request_headers`, however, is a HashMap containing every header field, that was sent along with the request by the client.
 You should use the `set_header!` and `header!` macros respectively, whenever possible.
+
+### Sessions
+
+Drain's sessions enable users to store data, that are bound to a particular client, across requests, server-side.
+To start a session, use `start_session!()` macro. It returns a `Session` struct, which contains the following methods:
+
+- `async fn get<'a, V: SessionValue + Clone + 'static>(&'a self, k: &'a String) -> Option<V>` - it returns an object, 
+that implements the `SessionValue` and `Clone` traits, based on a provided key `k`
+- `async fn set(&mut self, k: String, v: Box<dyn SessionValue>)` - it sets the session field identified by `k` to the provided `v`,
+which is a boxed `SessionValue` trait object
+- `async fn destroy(mut self)` - destroys the session
+
+Everything you want to put in the session has to implement the `SessionValue` and `Clone` traits.
+You can do it using the `SessionValue` derive macro from `drain_macros`, as follows:
+
+```rust
+use drain_macros::SessionValue;
+
+#[derive(SessionValue, Clone)]
+struct Example;
+```
+
+Once a session is created, it sets the cookie `SESSION_ID` to a randomly-generated Base64 value.
 
 ### Cookies
 

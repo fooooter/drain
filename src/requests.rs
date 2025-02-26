@@ -197,8 +197,7 @@ where
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_get():{}] An error occurred while opening a dynamic library file.\
-                                                         Check if dynamic_pages_library field in config.json is correct.\
+                            eprintln!("[handle_get():{}] An unknown error occurred while executing the endpoint.\
                                                          Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(&mut stream).await {
                                 eprintln!("[handle_get():{}] FAILED. Error information:\n{e}", line!());
@@ -345,8 +344,7 @@ where
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_head():{}] An error occurred while opening a dynamic library file.\
-                                                          Check if dynamic_pages_library field in config.json is correct.\
+                            eprintln!("[handle_head():{}] An unknown error occurred while executing the endpoint.\
                                                           Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(&mut stream).await {
                                 eprintln!("[handle_head():{}] FAILED. Error information:\n{e}", line!());
@@ -488,8 +486,7 @@ where
                     match e {
                         LibError::DlSym { .. } => {},
                         _ => {
-                            eprintln!("[handle_post():{}] An error occurred while opening a dynamic library file.\
-                                                          Check if dynamic_pages_library field in config.json is correct.\
+                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
                                                           Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(&mut stream).await {
                                 eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());

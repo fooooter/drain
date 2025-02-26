@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::pin::Pin;
+use std::sync::LazyLock;
 use tokio::net::*;
 use tokio::*;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -92,6 +93,10 @@ async fn main() -> io::Result<()> {
                 if CONFIG.enable_trace { "enabled" } else { "disabled" },
                 if CONFIG.enable_server_header { "will" } else { "won't" });
     }
+
+    println!("Initializing the library...");
+
+    LazyLock::force(&ENDPOINT_LIBRARY);
 
     match &CONFIG.https {
         Some(https) if https.enabled => {

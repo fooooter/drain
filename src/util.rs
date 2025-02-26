@@ -29,6 +29,21 @@ use crate::error::*;
 
 type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
 
+pub static ENDPOINT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    unsafe {
+        match Library::new(format!("{}/{}", &CONFIG.server_root, &CONFIG.endpoints_library)) {
+            Ok(lib) => lib,
+            Err(e) => {
+                eprintln!("[ENDPOINT_LIBRARY:{}] An error occurred while opening a dynamic library file. \
+                                                 Check if dynamic_pages_library field in config.json is correct.\n\
+                                                 Error information:\n{e}\n", line!());
+
+                panic!("Unrecoverable error occurred while initializing a dynamic library.");
+            }
+        }
+    }
+});
+
 pub static HEADERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^([[:alnum:]]+(([-_])[[:alnum:]]+)*)(: ?)([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)$"#).unwrap()
 });
@@ -537,12 +552,9 @@ where
 {
     match unsafe {
             let endpoint_symbol = String::from(endpoint).replace(|x| x == '/' || x == '\\', "::");
-            let lib = Library::new(format!("{}/{}", &CONFIG.server_root, &CONFIG.endpoints_library))?;
-            let e = lib.get::<Endpoint>(endpoint_symbol.as_bytes())?;
-            let content = e(request_data, &request_headers, response_headers, set_cookie);
-            lib.close()?;
+            let e = ENDPOINT_LIBRARY.get::<Endpoint>(endpoint_symbol.as_bytes())?;
 
-            content
+            e(request_data, &request_headers, response_headers, set_cookie)
     } {
         Ok(content) => Ok(content),
         Err(e) => {

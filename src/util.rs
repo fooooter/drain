@@ -355,10 +355,13 @@ where
         let mut buffer = BytesMut::with_capacity(
             match headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
                 Ok(l) if l > 0 => {
+                    if l > CONFIG.max_content_length {
+                        return Err(ServerError::BodyTooLarge);
+                    }
                     l
                 },
-                Ok(l) if l > CONFIG.max_content_length => {
-                    return Err(ServerError::BodyTooLarge);
+                Ok(l) if l == 0 => {
+                    return Ok(request);
                 },
                 _ => {
                     return Err(ServerError::InvalidRequest);

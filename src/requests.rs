@@ -136,10 +136,13 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
+        let res_tmp = match File::open(format!("{document_root}/{resource}/index.html")).await {
+            Ok(_) => {
+                format!("{resource}/index.html")
+            },
+            _ => {
+                format!("{resource}/index")
+            }
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
@@ -300,10 +303,13 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
+        let res_tmp = match File::open(format!("{document_root}/{resource}/index.html")).await {
+            Ok(_) => {
+                format!("{resource}/index.html")
+            },
+            _ => {
+                format!("{resource}/index")
+            }
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
@@ -425,10 +431,13 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if let Ok(_) = File::open(format!("{document_root}/{resource}/index.html")).await {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
+        let res_tmp = match File::open(format!("{document_root}/{resource}/index.html")).await {
+            Ok(_) => {
+                format!("{resource}/index.html")
+            },
+            _ => {
+                format!("{resource}/index")
+            }
         };
 
         if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {

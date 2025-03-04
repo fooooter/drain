@@ -240,10 +240,13 @@ impl Https {
             }
         )?;
 
-        if let Some(SslVersion::TLS1_3) = ssl_ctx_builder.min_proto_version() {
-            ssl_ctx_builder.set_ciphersuites(&self.cipher_list)?;
-        } else {
-            ssl_ctx_builder.set_cipher_list(&self.cipher_list)?;
+        match ssl_ctx_builder.min_proto_version() {
+            Some(SslVersion::TLS1_3) => {
+                ssl_ctx_builder.set_ciphersuites(&self.cipher_list)?;
+            },
+            _ => {
+                ssl_ctx_builder.set_cipher_list(&self.cipher_list)?;
+            }
         }
 
         ssl_ctx_builder.set_verify(SslVerifyMode::PEER);

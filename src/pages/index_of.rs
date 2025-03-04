@@ -14,29 +14,32 @@ where
 
     let mut directory_list = String::new();
 
-    if let Some(access_control) = &CONFIG.access_control {
-        for dir in read_dir(format!("{document_root}/{directory}"))? {
-            let dir = dir?;
-            let path = dir.path();
-            let path_str = String::from(path.to_string_lossy());
-            let mut path_trim = path_str.trim_start_matches(document_root);
-            path_trim = path_trim.trim_start_matches('/');
+    match &CONFIG.access_control {
+        Some(access_control) => {
+            for dir in read_dir(format!("{document_root}/{directory}"))? {
+                let dir = dir?;
+                let path = dir.path();
+                let path_str = String::from(path.to_string_lossy());
+                let mut path_trim = path_str.trim_start_matches(document_root);
+                path_trim = path_trim.trim_start_matches('/');
 
-            if !access_control.is_access_allowed(&String::from(path_trim)) {
-                continue;
+                if !access_control.is_access_allowed(&String::from(path_trim)) {
+                    continue;
+                }
+
+                directory_list.push_str(&*format!("<li><a href=/{path_trim}>{path_trim}</a></li>"));
             }
+        },
+        _ => {
+            for dir in read_dir(format!("{document_root}/{directory}"))? {
+                let dir = dir?;
+                let path = dir.path();
+                let path_str = String::from(path.to_string_lossy());
+                let mut path_trim = path_str.trim_start_matches(document_root);
+                path_trim = path_trim.trim_start_matches('/');
 
-            directory_list.push_str(&*format!("<li><a href=/{path_trim}>{path_trim}</a></li>"));
-        }
-    } else {
-        for dir in read_dir(format!("{document_root}/{directory}"))? {
-            let dir = dir?;
-            let path = dir.path();
-            let path_str = String::from(path.to_string_lossy());
-            let mut path_trim = path_str.trim_start_matches(document_root);
-            path_trim = path_trim.trim_start_matches('/');
-
-            directory_list.push_str(&*format!("<li><a href=/{path_trim}>{path_trim}</a></li>"));
+                directory_list.push_str(&*format!("<li><a href=/{path_trim}>{path_trim}</a></li>"));
+            }
         }
     }
 

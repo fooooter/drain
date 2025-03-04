@@ -147,10 +147,13 @@ where
         response.push_str(&*server_header);
     }
 
-    let global_response_headers = if let Some(global_response_headers) = &CONFIG.global_response_headers {
-        global_response_headers.clone()
-    } else {
-        HashMap::from([(String::from("Connection"), String::from("close"))])
+    let global_response_headers = match &CONFIG.global_response_headers {
+        Some(global_response_headers) => {
+            global_response_headers.to_owned()
+        },
+        _ => {
+            HashMap::from([(String::from("Connection"), String::from("close"))])
+        }
     };
 
     if let Some(set_cookie) = set_cookie {
@@ -349,9 +352,9 @@ where
 
     let mut request = Request::parse_from_string(&request_string)?;
 
-    if let  Request::Post {ref mut data, headers, ..} |
-            Request::Put {ref mut data, headers, ..} |
-            Request::Patch {ref mut data, headers, ..} = &mut request {
+    if let  Request::Post {data, headers, ..} |
+            Request::Put {data, headers, ..} |
+            Request::Patch {data, headers, ..} = &mut request {
         let mut buffer = BytesMut::with_capacity(
             match headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
                 Ok(l) if l > 0 => {

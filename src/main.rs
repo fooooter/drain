@@ -82,10 +82,13 @@ async fn main() -> io::Result<()> {
     let bind_host = &CONFIG.bind_host;
 
     if CONFIG.be_verbose {
-        if let Some(encoding) = &CONFIG.encoding {
-            println!("Encoding enabled and set to \"{}\".", encoding.use_encoding);
-        } else {
-            println!("Encoding disabled.");
+        match &CONFIG.encoding {
+            Some(encoding) => {
+                println!("Encoding enabled and set to \"{}\".", encoding.use_encoding);
+            },
+            _ => {
+                println!("Encoding disabled.");
+            }
         }
 
         println!("TRACE HTTP method is {}.\n\

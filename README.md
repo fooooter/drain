@@ -207,6 +207,8 @@ that implements the `SessionValue` and `Clone` traits, based on a provided key `
 which is a boxed `SessionValue` trait object
 - `async fn destroy(mut self)` - destroys the session
 
+Sessions are automatically cleared after about an hour.
+
 Everything you want to put in the session has to implement the `SessionValue` and `Clone` traits.
 You can do it using the `SessionValue` derive macro from `drain_macros`, as follows:
 

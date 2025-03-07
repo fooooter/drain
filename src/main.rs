@@ -20,11 +20,11 @@ use crate::error::ServerError;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::util::ResourceType::Dynamic;
 
-async fn handle_connection<T>(mut stream: T) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(stream: &mut T) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
-    match receive_request(&mut stream).await {
+    match receive_request(stream).await {
         Ok(request) => {
             match request {
                 Get {resource, params, headers} => handle_get(stream, &headers, resource, &params).await,
@@ -36,24 +36,24 @@ where
                         (String::from("Content-Type"), String::from("message/http"))
                     ]);
 
-                    send_response(&mut stream, 200, Some(response_headers), Some(request), None, Some(Dynamic)).await
+                    send_response(stream, 200, Some(response_headers), Some(request), None, Some(Dynamic)).await
                 }
                 _ => {
                     let accept_header = HashMap::from([
                         (String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))
                     ]);
 
-                    send_response(&mut stream, 405, Some(accept_header), None, None, None).await
+                    send_response(stream, 405, Some(accept_header), None, None, None).await
                 }
             }
         },
         Err(e) => {
             match e {
                 ServerError::DecompressionError(..) | ServerError::UnsupportedEncoding => {
-                    send_response(&mut stream, 406, None, None, None, None).await?
+                    send_response(stream, 406, None, None, None, None).await?
                 },
                 ServerError::InvalidRequest | ServerError::MalformedPayload => {
-                    send_response(&mut stream, 400, None, None, None, None).await?
+                    send_response(stream, 400, None, None, None, None).await?
                 },
                 ServerError::UnsupportedMediaType => {
                     let response_headers: HashMap<String, String> = HashMap::from([
@@ -61,13 +61,13 @@ where
                         (String::from("Vary"), String::from("Content-Type"))
                     ]);
 
-                    send_response(&mut stream, 415, Some(response_headers), None, None, None).await?
+                    send_response(stream, 415, Some(response_headers), None, None, None).await?
                 },
                 ServerError::BodyTooLarge => {
-                    send_response(&mut stream, 413, None, None, None, None).await?
+                    send_response(stream, 413, None, None, None, None).await?
                 },
                 _ => {
-                    internal_server_error(&mut stream).await?;
+                    internal_server_error(stream).await?;
                 }
             }
             Err(Box::new(e))
@@ -122,7 +122,7 @@ async fn main() -> io::Result<()> {
                         }
 
                         spawn(async move {
-                            if let Err(e) = handle_connection(stream).await {
+                            if let Err(e) = handle_connection(&mut stream).await {
                                 eprintln!("[main():{}] An error occurred while handling connection:\
                                 \n{e}\n", line!());
                             }
@@ -146,10 +146,10 @@ async fn main() -> io::Result<()> {
     let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
     println!("Listening on {}:{}", bind_host, bind_port);
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (mut stream, _) = listener.accept().await?;
 
         spawn(async move {
-            if let Err(e) = handle_connection(stream).await {
+            if let Err(e) = handle_connection(&mut stream).await {
                 eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
             }
         });

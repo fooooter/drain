@@ -133,7 +133,7 @@ pub fn index() {
             <body>
                 Hello, world! {} request was sent.
             </body>
-        </html>"#, match request_data {
+        </html>"#, match REQUEST_DATA {
         Get(_) => "GET",
         Post {..} => "POST",
         Head(_) => "HEAD"
@@ -157,7 +157,7 @@ Keep in mind you'd have to specify `settings/index` inside `endpoints` field in 
 
 ### RequestData
 
-`RequestData` is a struct-like Enum, which has variants, that tell, what kind of HTTP request method was used and stores
+`REQUEST_DATA` of the type `RequestData` is a struct-like Enum, which has variants, that tell, what kind of HTTP request method was used and stores
 request headers and data specific to each variant.
 
 ```rust
@@ -190,10 +190,11 @@ pub enum RequestBody {
 
 ### Headers
 
-`response_headers` is a HashMap containing every header field, that will be sent in response. It's a mutable reference,
+`RESPONSE_HEADERS` is a HashMap containing every header field, that will be sent in response. It's a mutable reference,
 so that you can simply append a header to existing ones. Its best use cases are redirections using `Location` header and
 changing content type to JSON, for example. `Content-Type` header must be set explicitly, otherwise an empty page will be returned.
-`request_headers`, however, is a HashMap containing every header field, that was sent along with the request by the client.
+
+`REQUEST_HEADERS`, however, is a HashMap containing every header field, that was sent along with the request by the client.
 You should use the `set_header!` and `header!` macros respectively, whenever possible.
 
 ### Sessions
@@ -223,11 +224,11 @@ Once a session is created, it sets the cookie `SESSION_ID` to a randomly-generat
 
 ### Cookies
 
-`set_cookie` is a HashMap containing every cookie to be set by the client. It's initially empty, and is also mutably referenced.
+`SET_COOKIE` is a HashMap containing every cookie to be set by the client. It's initially empty, and is also mutably referenced.
 
 To get a HashMap of all cookies, you can use the `cookies!` macro. 
 Keep in mind, that it returns `Option<HashMap<String, String>>`, so the result can be `None` if there are no cookies.
-Cookies can be set by inserting a name of the cookie and a `SetCookie` struct into the `set_cookie` HashMap.
+Cookies can be set by inserting a name of the cookie and a `SetCookie` struct into the `SET_COOKIE` HashMap.
 
 `SetCookie` is defined as follows:
 ```rust
@@ -246,6 +247,6 @@ pub struct SetCookie {
 
 ### Redirections
 
-Redirections are done once you append the `Location` header to `response_headers` in a dynamic page. 
+Redirections are done once you append the `Location` header to `RESPONSE_HEADERS` in a dynamic page. 
 It's up to you, whether a page should return content in redirection response or not, but it's preferred to 
 return `None` after specifying `Location`. The status code is set by default to 302, but this will be changeable very soon.

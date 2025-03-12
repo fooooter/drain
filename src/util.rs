@@ -420,7 +420,7 @@ where
         let body: RequestBody;
 
         match headers.get("content-type") {
-            Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded;") => {
+            Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded") => {
                 let x_www_urlencoded_raw = String::from(String::from_utf8_lossy(&payload));
                 let mut body_hm: HashMap<String, String> = HashMap::new();
                 for kv in x_www_urlencoded_raw.split('&') {

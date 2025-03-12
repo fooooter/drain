@@ -96,10 +96,10 @@ impl Request {
 }
 
 static FILE_HANDLE_LIMIT: Semaphore = Semaphore::const_new(
-    if cfg!(target_os = "linux") { 1024 }
-    else if cfg!(target_os = "windows") { 16777216 }
-    else if cfg!(target_os = "macos") { 10240 }
-    else { 256 }
+    if cfg!(target_os = "linux") { 1023 }
+    else if cfg!(target_os = "windows") { 16777215 }
+    else if cfg!(target_os = "macos") { 10239 }
+    else { 255 }
 );
 
 pub async fn handle_get<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>

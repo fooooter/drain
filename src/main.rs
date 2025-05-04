@@ -97,8 +97,6 @@ async fn main() -> io::Result<()> {
                 if CONFIG.enable_server_header { "will" } else { "won't" });
     }
 
-    println!("Initializing the library...");
-
     LazyLock::force(&ENDPOINT_LIBRARY);
 
     match &CONFIG.https {

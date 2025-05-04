@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.2.3-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.2.4-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -96,7 +96,7 @@ Currently available fields are:
 - `be_verbose` - toggle verbose output. False by default.
 
 Drain must be restarted in order for changes to take effect.
-Currently, the required fields are: `bind_host`, `bind_port`, `endpoints_library`, `document_root` and `server_root`.
+Currently, the required fields are: `bind_host`, `bind_port`, `document_root` and `server_root`.
 
 ## Usage
 
@@ -196,6 +196,14 @@ changing content type to JSON, for example. `Content-Type` header must be set ex
 
 `REQUEST_HEADERS`, however, is a HashMap containing every header field, that was sent along with the request by the client.
 You should use the `set_header!` and `header!` macros respectively, whenever possible.
+
+### HTTP response codes
+
+Drain provides an interface to manipulate HTTP response codes. 
+
+There is a `&mut u16` variable `HTTP_STATUS_CODE` present 
+in every scope inside a function marked as an endpoint, that can be dereferenced in order to set a status code that will be presented
+to the client in response.
 
 ### Sessions
 

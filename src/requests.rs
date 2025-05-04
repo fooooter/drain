@@ -113,33 +113,38 @@ where
 
     if let Some(access_control) = &CONFIG.access_control {
         if !access_control.is_access_allowed(&resource) {
-            let deny_action = access_control.deny_action;
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(
-                if deny_action == 404 { "not_found" } else { "forbidden" },
-                stream,
-                Get(&None),
-                headers,
-                &mut response_headers,
-                &mut set_cookie).await;
-            let content_type = response_headers.get("content-type");
+            let mut deny_action = access_control.deny_action;
+            if let Some(library) = &*ENDPOINT_LIBRARY {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint(
+                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    stream,
+                    Get(&None),
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut deny_action,
+                    library).await;
+                let content_type = response_headers.get("content-type");
 
-            if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                    (mime.to_string(), mime.type_().to_string())
-                } else {
-                    response_headers.remove(&String::from("content-type"));
-                    return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
-                };
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
 
-                if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 }
-
-                return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await
+                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
             }
-            return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
+            return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
         }
     }
 
@@ -163,7 +168,7 @@ where
         let _ = FILE_HANDLE_LIMIT.acquire().await?;
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
             match &CONFIG.endpoints {
-                Some(endpoints) if endpoints.contains(&res_tmp_trim) => {}
+                Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
                 _ => {
                     return index_of(stream, resource, false, headers).await;
                 }
@@ -173,10 +178,11 @@ where
         resource = res_tmp_trim;
     }
 
-    if let Some(endpoints) = &CONFIG.endpoints {
+    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(&*resource, stream, Get(params), headers, &mut response_headers, &mut set_cookie).await;
+            let mut status: u16 = 200;
+            let content = endpoint(&*resource, stream, Get(params), headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -185,7 +191,7 @@ where
                         (mime.to_string(), mime.type_().to_string())
                     } else {
                         response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, 200, Some(response_headers), None, Some(set_cookie), None).await
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await
                     };
 
                     if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -197,14 +203,14 @@ where
                         return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                     }
 
-                    return send_response(stream, 200, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 },
                 (Ok(None), _) | (Ok(Some(_)), None) => {
                     if response_headers.contains_key("location") {
                         return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
                     }
 
-                    return send_response(stream, 200, Some(response_headers), None, Some(set_cookie), None).await;
+                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
                 },
                 (Err(e), _) => {
                     match e {
@@ -273,26 +279,29 @@ where
             }
         },
         Err(_) => {
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint("not_found", stream, Get(params), headers, &mut response_headers, &mut set_cookie).await;
-            let content_type = response_headers.get("content-type");
+            if let Some(library) = &*ENDPOINT_LIBRARY {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint("not_found", stream, Get(params), headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+                let content_type = response_headers.get("content-type");
 
-            if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                    (mime.to_string(), mime.type_().to_string())
-                } else {
-                    response_headers.remove(&String::from("content-type"));
-                    return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await
-                };
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await;
+                    };
 
-                if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 }
-
-                return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await;
             }
-            send_response(stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await
+            send_response(stream, 404, Some(response_headers), None, None, None).await
         }
     }
 }
@@ -333,7 +342,7 @@ where
         let _ = FILE_HANDLE_LIMIT.acquire().await?;
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
             match &CONFIG.endpoints {
-                Some(endpoints) if endpoints.contains(&res_tmp_trim) => {}
+                Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
                 _ => {
                     return index_of(stream, resource, true, headers).await;
                 }
@@ -343,10 +352,11 @@ where
         resource = res_tmp_trim;
     }
 
-    if let Some(endpoints) = &CONFIG.endpoints {
+    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie).await {
+            let mut status: u16 = 200;
+            match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie, &mut status, library).await {
                 Ok(content) => {
                     if let Some(c) = content {
                         let content_length = c.len().to_string();
@@ -357,7 +367,7 @@ where
                         return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
                     }
 
-                    return send_response(stream, 200, Some(response_headers), None, Some(set_cookie), None).await;
+                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
                 },
                 Err(e) => {
                     match e {
@@ -414,33 +424,38 @@ where
 
     if let Some(access_control) = &CONFIG.access_control {
         if !access_control.is_access_allowed(&resource) {
-            let deny_action = access_control.deny_action;
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(
-                if deny_action == 404 { "not_found" } else { "forbidden" },
-                stream,
-                Post {data: &None, params: &None},
-                headers,
-                &mut response_headers,
-                &mut set_cookie).await;
-            let content_type = response_headers.get("content-type");
+            let mut deny_action = access_control.deny_action;
+            if let Some(library) = &*ENDPOINT_LIBRARY {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint(
+                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    stream,
+                    Post { data: &None, params: &None },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut deny_action,
+                    library).await;
+                let content_type = response_headers.get("content-type");
 
-            if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                    (mime.to_string(), mime.type_().to_string())
-                } else {
-                    response_headers.remove(&String::from("content-type"));
-                    return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
-                };
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
 
-                if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 }
-
-                return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await
+                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
             }
-            return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await
+            return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
         }
     }
 
@@ -464,7 +479,7 @@ where
         let _ = FILE_HANDLE_LIMIT.acquire().await?;
         if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
             match &CONFIG.endpoints {
-                Some(endpoints) if endpoints.contains(&res_tmp_trim) => {}
+                Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
                 _ => {
                     return index_of(stream, resource, false, headers).await;
                 }
@@ -474,10 +489,11 @@ where
         resource = res_tmp_trim;
     }
 
-    if let Some(endpoints) = &CONFIG.endpoints {
+    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint(&*resource, stream, Post {data, params}, headers, &mut response_headers, &mut set_cookie).await;
+            let mut status: u16 = 200;
+            let content = endpoint(&*resource, stream, Post {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -486,7 +502,7 @@ where
                         (mime.to_string(), mime.type_().to_string())
                     } else {
                         response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, 200, Some(response_headers), None, Some(set_cookie), None).await
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
                     };
 
                     if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
@@ -498,14 +514,14 @@ where
                         return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                     }
 
-                    return send_response(stream, 200, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 },
                 (Ok(None), _) | (Ok(Some(_)), None) => {
                     if response_headers.contains_key("location") {
                         return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
                     }
 
-                    return send_response(stream, 200, Some(response_headers), None, Some(set_cookie), None).await;
+                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
                 },
                 (Err(e), _) => {
                     match e {
@@ -575,26 +591,29 @@ where
             }
         },
         Err(_) => {
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let content = endpoint("not_found", stream, Post {data, params}, headers, &mut response_headers, &mut set_cookie).await;
-            let content_type = response_headers.get("content-type");
+            if let Some(library) = &*ENDPOINT_LIBRARY {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint("not_found", stream, Post { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+                let content_type = response_headers.get("content-type");
 
-            if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                    (mime.to_string(), mime.type_().to_string())
-                } else {
-                    response_headers.remove(&String::from("content-type"));
-                    return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await
-                };
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
 
-                if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
                 }
-
-                return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
             }
-            send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await
+            send_response(stream, 404, Some(response_headers), None, None, None).await
         }
     }
 }

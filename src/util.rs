@@ -27,20 +27,25 @@ use crate::config::CONFIG;
 use crate::requests::Request;
 use crate::error::*;
 
-type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
+type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>, &mut u16) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
 
-pub static ENDPOINT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+pub static ENDPOINT_LIBRARY: LazyLock<Option<Library>> = LazyLock::new(|| {
     unsafe {
-        match Library::new(format!("{}/{}", &CONFIG.server_root, &CONFIG.endpoints_library)) {
-            Ok(lib) => lib,
-            Err(e) => {
-                eprintln!("[ENDPOINT_LIBRARY:{}] An error occurred while opening a dynamic library file. \
-                                                 Check if dynamic_pages_library field in config.json is correct.\n\
-                                                 Error information:\n{e}\n", line!());
-
-                panic!("Unrecoverable error occurred while initializing a dynamic library.");
+        if let Some(endpoints_library) = &CONFIG.endpoints_library {
+            println!("Initializing the library...");
+            return match Library::new(format!("{}/{}", &CONFIG.server_root, endpoints_library)) {
+                Ok(lib) => Some(lib),
+                Err(e) => {
+                    eprintln!("[ENDPOINT_LIBRARY:{}] An error occurred while opening a dynamic library file. \
+                                                     Check if dynamic_pages_library field in config.json is correct. Proceeding without it...\n\
+                                                     Error information:\n{e}\n", line!());
+                    None
+                }
             }
         }
+
+        println!("Library not provided, skipping...");
+        None
     }
 });
 
@@ -552,15 +557,17 @@ pub async fn endpoint<'a, T>(endpoint: &str,
                              request_data: RequestData<'a>,
                              request_headers: &HashMap<String, String>,
                              response_headers: &mut HashMap<String, String>,
-                             set_cookie: &mut HashMap<String, SetCookie>) -> Result<Option<Vec<u8>>, LibError>
+                             set_cookie: &mut HashMap<String, SetCookie>,
+                             status: &mut u16,
+                             library: &Library) -> Result<Option<Vec<u8>>, LibError>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
     match unsafe {
             let endpoint_symbol = String::from(endpoint).replace(|x| x == '/' || x == '\\', "::");
-            let e = ENDPOINT_LIBRARY.get::<Endpoint>(endpoint_symbol.as_bytes())?;
+            let e = library.get::<Endpoint>(endpoint_symbol.as_bytes())?;
 
-            e(request_data, &request_headers, response_headers, set_cookie)
+            e(request_data, &request_headers, response_headers, set_cookie, status)
     } {
         Ok(content) => Ok(content),
         Err(e) => {

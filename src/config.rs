@@ -42,7 +42,7 @@ pub struct Config {
     pub bind_host: String,
     pub bind_port: u16,
     pub endpoints: Option<Vec<String>>,
-    pub endpoints_library: String,
+    pub endpoints_library: Option<String>,
     #[serde(default = "Config::default_cache_max_age")]
     pub cache_max_age: u64,
     pub encoding: Option<Encoding>,

@@ -8,9 +8,11 @@ use std::env;
 use std::error::Error;
 use std::pin::Pin;
 use std::sync::LazyLock;
+use std::time::Duration;
 use tokio::net::*;
 use tokio::*;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::time::timeout;
 use tokio_openssl::SslStream;
 use crate::requests::Request::{Get, Head, Options, Post, Trace};
 use crate::requests::*;
@@ -66,6 +68,9 @@ where
                 ServerError::BodyTooLarge => {
                     send_response(stream, 413, None, None, None, None).await?
                 },
+                ServerError::VersionNotSupported => {
+                    send_response(stream, 505, None, None, None, None).await?
+                },
                 _ => {
                     internal_server_error(stream).await?;
                 }
@@ -120,9 +125,20 @@ async fn main() -> io::Result<()> {
                         }
 
                         spawn(async move {
-                            if let Err(e) = handle_connection(&mut stream).await {
-                                eprintln!("[main():{}] An error occurred while handling connection:\
-                                \n{e}\n", line!());
+                            let mut buf: [u8; 1] = [0; 1];
+                            loop {
+                                match timeout(Duration::from_secs(10), Pin::new(&mut stream).peek(&mut buf)).await {
+                                    Ok(Ok(0)) | Err(_) => break,
+                                    Ok(Err(e)) => {
+                                        eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                                    },
+                                    _ => {}
+                                }
+
+                                if let Err(e) = handle_connection(&mut stream).await {
+                                    eprintln!("[main():{}] An error occurred while handling connection:\
+                                    \n{e}\n", line!());
+                                }
                             }
                         });
                     },
@@ -147,8 +163,19 @@ async fn main() -> io::Result<()> {
         let (mut stream, _) = listener.accept().await?;
 
         spawn(async move {
-            if let Err(e) = handle_connection(&mut stream).await {
-                eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+            let mut buf: [u8; 1] = [0; 1];
+            loop {
+                match timeout(Duration::from_secs(10), stream.peek(&mut buf)).await {
+                    Ok(Ok(0)) | Err(_) => break,
+                    Ok(Err(e)) => {
+                        eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                    },
+                    _ => {}
+                }
+
+                if let Err(e) = handle_connection(&mut stream).await {
+                    eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                }
             }
         });
     }

@@ -48,11 +48,16 @@ impl Request {
 
         let req_type = iter_req_line.next().unwrap().to_uppercase();
         let resource_with_params = iter_req_line.next().unwrap().trim();
+        let http_version = iter_req_line.next().unwrap().trim();
         let mut resource = String::from(resource_with_params);
         let mut params: HashMap<String, String> = HashMap::new();
 
         if req_type.eq("TRACE") {
             return Ok(Self::Trace(Vec::from(request_string.as_bytes())));
+        }
+
+        if !http_version.eq("HTTP/1.1") {
+            return Err(ServerError::VersionNotSupported);
         }
 
         if request_line.contains('?') {
@@ -78,6 +83,10 @@ impl Request {
         for header in headers_iter {
             let header_split = header.split_once(':').unwrap();
             headers.insert(header_split.0.trim().to_lowercase(), String::from(header_split.1.trim()));
+        }
+
+        if !headers.contains_key("host") {
+            return Err(ServerError::InvalidRequest);
         }
 
         let req = match req_type.trim() {

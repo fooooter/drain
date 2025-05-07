@@ -32,7 +32,7 @@ pub enum Request {
 }
 
 impl Request {
-    pub fn parse_from_string(request_string: &String) -> Result<Self, ServerError> {
+    pub fn parse_from_string(request_string: &String, keep_alive: &mut bool) -> Result<Self, ServerError> {
         let general_regex = Regex::new(
         r#"^((GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) /(((([A-Za-z0-9\-_]*\.[[:alnum:]]+/?)+)+|([A-Za-z0-9\-_]+/?)+)+(\?([[:alnum:]]+=[[:alnum:]]+)(&[[:alnum:]]+=[[:alnum:]]+)*)?)? (HTTP/((0\.9)|(1\.0)|(1\.1)|(2)|(3))))(\r\n(([[:alnum]]+(([-_])[[:alnum:]]+)*)(: )([A-Za-z0-9_ :;.,/"'?!(){}\[\]@<>=\-+*#$&`|~^%]+)))*[\S\s]*\z"#
         ).unwrap();
@@ -87,6 +87,12 @@ impl Request {
 
         if !headers.contains_key("host") {
             return Err(ServerError::InvalidRequest);
+        }
+
+        if let Some(connection) = headers.get("connection") {
+            if connection.eq("close") {
+                *keep_alive = false;
+            }
         }
 
         let req = match req_type.trim() {

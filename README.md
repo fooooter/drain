@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.2.5-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.2.6-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -93,6 +93,7 @@ Currently available fields are:
 - `enable_trace` - whether to enable TRACE HTTP method or not. TRACE method is considered not very safe, so it's false by default 
   (when false, the server returns 405 status).
 - `enable_server_header` - whether to enable the `Server` header or not. It contains "Drain " + its current version. True by default.
+- `request_timeout` - a time the server will wait for data to be sent by the client; if it takes too long, the server will close the connection. Set to 10 seconds by default.
 - `be_verbose` - toggle verbose output. False by default.
 
 Drain must be restarted in order for changes to take effect.

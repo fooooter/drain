@@ -3,6 +3,7 @@ mod util;
 mod pages;
 mod config;
 mod error;
+
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -22,11 +23,11 @@ use crate::error::ServerError;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::util::ResourceType::Dynamic;
 
-async fn handle_connection<T>(stream: &mut T) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(stream: &mut T, keep_alive: &mut bool) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
-    match receive_request(stream).await {
+    match receive_request(stream, keep_alive).await {
         Ok(request) => {
             match request {
                 Get {resource, params, headers} => handle_get(stream, &headers, resource, &params).await,
@@ -39,7 +40,7 @@ where
                     ]);
 
                     send_response(stream, 200, Some(response_headers), Some(request), None, Some(Dynamic)).await
-                }
+                },
                 _ => {
                     let accept_header = HashMap::from([
                         (String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))
@@ -100,6 +101,8 @@ async fn main() -> io::Result<()> {
                   Server header {} be sent.",
                 if CONFIG.enable_trace { "enabled" } else { "disabled" },
                 if CONFIG.enable_server_header { "will" } else { "won't" });
+
+        println!("Request timeout will occur after {} seconds of inactivity from the client.", &CONFIG.request_timeout);
     }
 
     LazyLock::force(&ENDPOINT_LIBRARY);
@@ -125,9 +128,13 @@ async fn main() -> io::Result<()> {
                         }
 
                         spawn(async move {
+                            let mut keep_alive = true;
                             let mut buf: [u8; 1] = [0; 1];
                             loop {
-                                match timeout(Duration::from_secs(10), Pin::new(&mut stream).peek(&mut buf)).await {
+                                if !keep_alive {
+                                    break;
+                                }
+                                match timeout(Duration::from_secs((&CONFIG).request_timeout), Pin::new(&mut stream).peek(&mut buf)).await {
                                     Ok(Ok(0)) | Err(_) => break,
                                     Ok(Err(e)) => {
                                         eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
@@ -135,7 +142,7 @@ async fn main() -> io::Result<()> {
                                     _ => {}
                                 }
 
-                                if let Err(e) = handle_connection(&mut stream).await {
+                                if let Err(e) = handle_connection(&mut stream, &mut keep_alive).await {
                                     eprintln!("[main():{}] An error occurred while handling connection:\
                                     \n{e}\n", line!());
                                 }
@@ -163,17 +170,23 @@ async fn main() -> io::Result<()> {
         let (mut stream, _) = listener.accept().await?;
 
         spawn(async move {
+            let mut keep_alive = true;
             let mut buf: [u8; 1] = [0; 1];
             loop {
-                match timeout(Duration::from_secs(10), stream.peek(&mut buf)).await {
+                if !keep_alive {
+                    break;
+                }
+
+                match timeout(Duration::from_secs((&CONFIG).request_timeout), stream.peek(&mut buf)).await {
                     Ok(Ok(0)) | Err(_) => break,
                     Ok(Err(e)) => {
                         eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                        break;
                     },
                     _ => {}
                 }
 
-                if let Err(e) = handle_connection(&mut stream).await {
+                if let Err(e) = handle_connection(&mut stream, &mut keep_alive).await {
                     eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
                 }
             }

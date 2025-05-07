@@ -329,7 +329,7 @@ where
     Ok(())
 }
 
-pub async fn receive_request<T>(stream: &mut T) -> Result<Request, ServerError>
+pub async fn receive_request<T>(stream: &mut T, keep_alive: &mut bool) -> Result<Request, ServerError>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -355,7 +355,7 @@ where
         };
     }
 
-    let mut request = Request::parse_from_string(&request_string)?;
+    let mut request = Request::parse_from_string(&request_string, keep_alive)?;
 
     if let  Request::Post {data, headers, ..} |
             Request::Put {data, headers, ..} |

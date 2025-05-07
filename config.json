@@ -43,5 +43,6 @@
   },
   "enable_trace": false,
   "enable_server_header": true,
+  "request_timeout": 10,
   "be_verbose": false
 }

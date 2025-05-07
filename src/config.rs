@@ -53,6 +53,8 @@ pub struct Config {
     pub enable_trace: bool,
     #[serde(default = "Config::default_server_header_state")]
     pub enable_server_header: bool,
+    #[serde(default = "Config::default_request_timeout")]
+    pub request_timeout: u64,
     #[serde(default)]
     pub be_verbose: bool
 }
@@ -146,6 +148,10 @@ impl Config {
 
     const fn default_cache_max_age() -> u64 {
         3600
+    }
+
+    const fn default_request_timeout() -> u64 {
+        10
     }
 
     pub fn get_supported_encodings(&self) -> Option<&Vec<String>> {

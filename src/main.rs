@@ -134,6 +134,7 @@ async fn main() -> io::Result<()> {
                                 if !keep_alive {
                                     break;
                                 }
+
                                 match timeout(Duration::from_secs((&CONFIG).request_timeout), Pin::new(&mut stream).peek(&mut buf)).await {
                                     Ok(Ok(0)) | Err(_) => break,
                                     Ok(Err(e)) => {

@@ -30,9 +30,9 @@ use crate::error::*;
 type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>, &mut u16) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
 
 pub static ENDPOINT_LIBRARY: LazyLock<Option<Library>> = LazyLock::new(|| {
-    unsafe {
-        if let Some(endpoints_library) = &CONFIG.endpoints_library {
-            println!("Initializing the library...");
+    if let Some(endpoints_library) = &CONFIG.endpoints_library {
+        println!("Initializing the library...");
+        unsafe {
             return match Library::new(format!("{}/{}", &CONFIG.server_root, endpoints_library)) {
                 Ok(lib) => Some(lib),
                 Err(e) => {
@@ -43,10 +43,10 @@ pub static ENDPOINT_LIBRARY: LazyLock<Option<Library>> = LazyLock::new(|| {
                 }
             }
         }
-
-        println!("Library not provided, skipping...");
-        None
     }
+
+    println!("Library not provided, skipping...");
+    None
 });
 
 pub static HEADERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {

@@ -303,12 +303,12 @@ where
             for (k, v) in h {
                 response.push_str(&*format!("{k}: {v}\r\n"));
             }
+            response.push_str("Content-Length: 0\r\n\r\n");
 
-            response.push_str("\r\n");
             response_bytes = Vec::from(response);
         },
         (None, None) => {
-            response.push_str("\r\n");
+            response.push_str("Content-Length: 0\r\n\r\n");
             response_bytes = Vec::from(response);
         }
     }

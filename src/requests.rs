@@ -23,12 +23,12 @@ pub enum Request {
     Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
     Head {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
     Post {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
-    Put {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
-    Delete,
+    Put {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
+    Delete {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
     Connect,
-    Options {resource: String, headers: HashMap<String, String>},
+    Options,
     Trace(Vec<u8>),
-    Patch {resource: String, headers: HashMap<String, String>, data: Option<RequestBody>},
+    Patch {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
 }
 
 impl Request {
@@ -99,11 +99,11 @@ impl Request {
             "GET" => Self::Get {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "HEAD" => Self::Head {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "POST" => Self::Post {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
-            "PUT" => Self::Put {resource, headers, data: None},
-            "DELETE" => Self::Delete,
+            "PUT" => Self::Put {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
+            "DELETE" => Self::Delete {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
             "CONNECT" => Self::Connect,
-            "OPTIONS" => Self::Options {resource, headers},
-            "PATCH" => Self::Patch {resource, headers, data: None},
+            "OPTIONS" => Self::Options,
+            "PATCH" => Self::Patch {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
             _ => return Err(ServerError::InvalidRequest),
         };
         Ok(req)
@@ -638,8 +638,385 @@ where
     T: AsyncRead + AsyncWrite + Unpin
 {
     let response_headers = HashMap::from([
-        (String::from("Accept"), format!("GET, HEAD, POST, OPTIONS{}", if CONFIG.enable_trace {", TRACE"} else {""}))
+        (String::from("Accept"), format!("GET, HEAD, POST, {} OPTIONS{}",
+                                         if (&*ENDPOINT_LIBRARY).is_some() {"PUT, DELETE, PATCH"} else {""},
+                                         if CONFIG.enable_trace {", TRACE"} else {""}))
     ]);
 
     send_response(stream,204, Some(response_headers), None, None, None).await
+}
+
+pub async fn handle_put<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
+    let mut response_headers: HashMap<String, String> = HashMap::new();
+
+    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
+        resource.remove(0);
+
+        if let Some(access_control) = &CONFIG.access_control {
+            if !access_control.is_access_allowed(&resource) {
+                let mut deny_action = access_control.deny_action;
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint(
+                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    stream,
+                    Put { data: &None, params: &None },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut deny_action,
+                    library).await;
+                let content_type = response_headers.get("content-type");
+
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
+
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                }
+                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+            }
+        }
+
+        if endpoints.contains(&resource) {
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let mut status: u16 = 200;
+            let content = endpoint(&*resource, stream, Put {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content_type = response_headers.get("content-type");
+
+            match (content, content_type) {
+                (Ok(Some(c)), Some(c_t)) => {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
+
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    if response_headers.contains_key("location") {
+                        return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    }
+
+                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                },
+                (Ok(None), _) | (Ok(Some(_)), None) => {
+                    if response_headers.contains_key("location") {
+                        return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                    }
+
+                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                },
+                (Err(e), _) => {
+                    match e {
+                        LibError::DlSym { .. } => {},
+                        _ => {
+                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
+                                                          Attempting to send Internal Server Error page to the client...", line!());
+                            if let Err(e) = internal_server_error(stream).await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            eprintln!("Attempting to close connection...");
+                            if let Err(e) = stream.shutdown().await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            panic!("Unrecoverable error occurred while handling connection.");
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = endpoint("not_found", stream, Put { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+        let content_type = response_headers.get("content-type");
+
+        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                (mime.to_string(), mime.type_().to_string())
+            } else {
+                response_headers.remove(&String::from("content-type"));
+                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+            };
+
+            if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+        }
+        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+    }
+
+    response_headers = HashMap::from([
+        (String::from("Accept"), format!("GET, HEAD, POST, OPTIONS{}", if CONFIG.enable_trace {", TRACE"} else {""}))
+    ]);
+
+    send_response(stream,405, Some(response_headers), None, None, None).await
+}
+
+pub async fn handle_delete<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
+    let mut response_headers: HashMap<String, String> = HashMap::new();
+
+    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
+        resource.remove(0);
+
+        if let Some(access_control) = &CONFIG.access_control {
+            if !access_control.is_access_allowed(&resource) {
+                let mut deny_action = access_control.deny_action;
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint(
+                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    stream,
+                    Delete { data: &None, params: &None },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut deny_action,
+                    library).await;
+                let content_type = response_headers.get("content-type");
+
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
+
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                }
+                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+            }
+        }
+
+        if endpoints.contains(&resource) {
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let mut status: u16 = 200;
+            let content = endpoint(&*resource, stream, Delete {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content_type = response_headers.get("content-type");
+
+            match (content, content_type) {
+                (Ok(Some(c)), Some(c_t)) => {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
+
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    if response_headers.contains_key("location") {
+                        return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    }
+
+                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                },
+                (Ok(None), _) | (Ok(Some(_)), None) => {
+                    if response_headers.contains_key("location") {
+                        return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                    }
+
+                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                },
+                (Err(e), _) => {
+                    match e {
+                        LibError::DlSym { .. } => {},
+                        _ => {
+                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
+                                                          Attempting to send Internal Server Error page to the client...", line!());
+                            if let Err(e) = internal_server_error(stream).await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            eprintln!("Attempting to close connection...");
+                            if let Err(e) = stream.shutdown().await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            panic!("Unrecoverable error occurred while handling connection.");
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = endpoint("not_found", stream, Delete { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+        let content_type = response_headers.get("content-type");
+
+        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                (mime.to_string(), mime.type_().to_string())
+            } else {
+                response_headers.remove(&String::from("content-type"));
+                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+            };
+
+            if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+        }
+        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+    }
+
+    response_headers = HashMap::from([
+        (String::from("Accept"), format!("GET, HEAD, POST, OPTIONS{}", if CONFIG.enable_trace {", TRACE"} else {""}))
+    ]);
+
+    send_response(stream,405, Some(response_headers), None, None, None).await
+}
+
+pub async fn handle_patch<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+where
+    T: AsyncRead + AsyncWrite + Unpin
+{
+    let mut response_headers: HashMap<String, String> = HashMap::new();
+
+    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
+        resource.remove(0);
+
+        if let Some(access_control) = &CONFIG.access_control {
+            if !access_control.is_access_allowed(&resource) {
+                let mut deny_action = access_control.deny_action;
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let content = endpoint(
+                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    stream,
+                    Patch { data: &None, params: &None },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut deny_action,
+                    library).await;
+                let content_type = response_headers.get("content-type");
+
+                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
+
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                }
+                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
+            }
+        }
+
+        if endpoints.contains(&resource) {
+            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+            let mut status: u16 = 200;
+            let content = endpoint(&*resource, stream, Patch {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content_type = response_headers.get("content-type");
+
+            match (content, content_type) {
+                (Ok(Some(c)), Some(c_t)) => {
+                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                        (mime.to_string(), mime.type_().to_string())
+                    } else {
+                        response_headers.remove(&String::from("content-type"));
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                    };
+
+                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                    }
+
+                    if response_headers.contains_key("location") {
+                        return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    }
+
+                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                },
+                (Ok(None), _) | (Ok(Some(_)), None) => {
+                    if response_headers.contains_key("location") {
+                        return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                    }
+
+                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                },
+                (Err(e), _) => {
+                    match e {
+                        LibError::DlSym { .. } => {},
+                        _ => {
+                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
+                                                          Attempting to send Internal Server Error page to the client...", line!());
+                            if let Err(e) = internal_server_error(stream).await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            eprintln!("Attempting to close connection...");
+                            if let Err(e) = stream.shutdown().await {
+                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                            }
+                            panic!("Unrecoverable error occurred while handling connection.");
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+        let content = endpoint("not_found", stream, Patch { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+        let content_type = response_headers.get("content-type");
+
+        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
+            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                (mime.to_string(), mime.type_().to_string())
+            } else {
+                response_headers.remove(&String::from("content-type"));
+                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+            };
+
+            if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+            }
+
+            return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+        }
+        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+    }
+
+    response_headers = HashMap::from([
+        (String::from("Accept"), format!("GET, HEAD, POST, OPTIONS{}", if CONFIG.enable_trace {", TRACE"} else {""}))
+    ]);
+
+    send_response(stream,405, Some(response_headers), None, None, None).await
 }

@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.2.7-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.3.0-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -6,6 +6,9 @@
 [✔]   	HEAD<br>
 [✔]   	POST<br>
 [✔]   	TRACE<br>
+[✔]   	PUT<br>
+[✔]   	PATCH<br>
+[✔]   	DELETE<br>
 [✔]	Auto-detect MIME types<br>
 [✔]	Cookies<br>
 [✔]	Sessions<br>
@@ -137,7 +140,10 @@ pub fn index() {
         </html>"#, match REQUEST_DATA {
         Get(_) => "GET",
         Post {..} => "POST",
-        Head(_) => "HEAD"
+        Head(_) => "HEAD",
+        Put(_) => "PUT",
+        Delete(_) => "DELETE",
+        Patch(_) => "PATCH"
     }));
   
     set_header!("Content-Type", "text/html; charset=utf-8");
@@ -165,12 +171,16 @@ request headers and data specific to each variant.
 pub enum RequestData<'a> {
     Get(&'a Option<HashMap<String, String>>),
     Post {data: &'a Option<RequestBody>, params: &'a Option<HashMap<String, String>>},
-    Head(&'a Option<HashMap<String, String>>)
+    Head(&'a Option<HashMap<String, String>>),
+    Put {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>},
+    Delete {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>},
+    Patch {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>}
 }
 ```
 
-POST `data` consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
-are `application/x-www-form-urlencoded` and `multipart/form-data` represented by `XWWWFormUrlEncoded` and `FormData` `RequestBody` enum variants respectively.
+POST, PUT, DELETE and PATCH `data` consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
+are `application/x-www-form-urlencoded`, `multipart/form-data`, `plain/text` and `application/octet-stream` represented by 
+`XWWWFormUrlEncoded`, `FormData`, `Plain` and `OctetStream` `RequestBody` enum variants respectively.
 
 `FormDataValue` is a struct containing possible filename of the data segment, its headers and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
 in `XWWWFormUrlEncoded`, where binary data are encoded using URL encoding.
@@ -183,7 +193,9 @@ pub struct FormDataValue {
 
 pub enum RequestBody {
     XWWWFormUrlEncoded(HashMap<String, String>),
-    FormData(HashMap<String, FormDataValue>)
+    FormData(HashMap<String, FormDataValue>),
+    Plain(String),
+    OctetStream(Vec<u8>)
 }
 ```
 

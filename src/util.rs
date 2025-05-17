@@ -20,7 +20,7 @@ use bstr::ByteSlice;
 use bytes::BytesMut;
 use drain_common::cookies::{SetCookie, SameSite};
 use drain_common::{FormDataValue, RequestBody, RequestData};
-use drain_common::RequestBody::{FormData, XWWWFormUrlEncoded};
+use drain_common::RequestBody::{FormData, OctetStream, Plain, XWWWFormUrlEncoded};
 use regex::bytes::Regex;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::CONFIG;
@@ -34,18 +34,24 @@ pub static ENDPOINT_LIBRARY: LazyLock<Option<Library>> = LazyLock::new(|| {
         println!("Initializing the library...");
         unsafe {
             return match Library::new(format!("{}/{}", &CONFIG.server_root, endpoints_library)) {
-                Ok(lib) => Some(lib),
+                Ok(lib) => {
+                    println!("Success.{}", if CONFIG.be_verbose {"\r\nPUT, DELETE and PATCH are available."} else {""});
+                    Some(lib)
+                },
                 Err(e) => {
                     eprintln!("[ENDPOINT_LIBRARY:{}] An error occurred while opening a dynamic library file. \
                                                      Check if dynamic_pages_library field in config.json is correct. Proceeding without it...\n\
                                                      Error information:\n{e}\n", line!());
+                    if CONFIG.be_verbose {
+                        println!("PUT, DELETE and PATCH are disabled.");
+                    }
                     None
                 }
             }
         }
     }
 
-    println!("Library not provided, skipping...");
+    println!("Library not provided, skipping...{}", if CONFIG.be_verbose {"\r\nPUT, DELETE and PATCH are disabled."} else {""});
     None
 });
 
@@ -359,7 +365,8 @@ where
 
     if let  Request::Post {data, headers, ..} |
             Request::Put {data, headers, ..} |
-            Request::Patch {data, headers, ..} = &mut request {
+            Request::Patch {data, headers, ..} |
+            Request::Delete {data, headers, .. } = &mut request {
         let mut buffer = BytesMut::with_capacity(
             match headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
                 Ok(l) if l > 0 => {
@@ -425,6 +432,9 @@ where
         let body: RequestBody;
 
         match headers.get("content-type") {
+            Some(content_type) if content_type.eq("application/octet-stream") => {
+                body = OctetStream(payload);
+            },
             Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded") => {
                 let x_www_urlencoded_raw = String::from(String::from_utf8_lossy(&payload));
                 let mut body_hm: HashMap<String, String> = HashMap::new();
@@ -442,6 +452,10 @@ where
                     }
                 }
                 body = XWWWFormUrlEncoded(body_hm);
+            },
+            Some(content_type) if content_type.starts_with("text/plain") => {
+                let plain_raw = String::from(String::from_utf8_lossy(&payload));
+                body = Plain(plain_raw);
             },
             Some(content_type) => {
                 let Some((content_type, boundary_raw)) = content_type.split_once(';') else {

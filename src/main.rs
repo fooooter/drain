@@ -15,7 +15,7 @@ use tokio::*;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::timeout;
 use tokio_openssl::SslStream;
-use crate::requests::Request::{Get, Head, Options, Post, Trace};
+use crate::requests::Request::{Get, Head, Options, Post, Trace, Put, Delete, Patch};
 use crate::requests::*;
 use crate::util::*;
 use crate::config::CONFIG;
@@ -30,10 +30,20 @@ where
     match receive_request(stream, keep_alive).await {
         Ok(request) => {
             match request {
-                Get {resource, params, headers} => handle_get(stream, &headers, resource, &params).await,
-                Head {resource, params, headers} => handle_head(stream, &headers, resource, &params).await,
-                Post {resource, params, headers, data} => handle_post(stream, &headers, resource, &data, &params).await,
-                Options {..} => handle_options(stream).await,
+                Get {resource, params, headers} =>
+                    handle_get(stream, &headers, resource, &params).await,
+                Head {resource, params, headers} =>
+                    handle_head(stream, &headers, resource, &params).await,
+                Post {resource, params, headers, data} =>
+                    handle_post(stream, &headers, resource, &data, &params).await,
+                Put {resource, params, headers, data} =>
+                    handle_put(stream, &headers, resource, &data, &params).await,
+                Delete {resource, params, headers, data} =>
+                    handle_delete(stream, &headers, resource, &data, &params).await,
+                Options {..} =>
+                    handle_options(stream).await,
+                Patch {resource, params, headers, data} =>
+                    handle_patch(stream, &headers, resource, &data, &params).await,
                 Trace(request) if CONFIG.enable_trace => {
                     let response_headers: HashMap<String, String> = HashMap::from([
                         (String::from("Content-Type"), String::from("message/http"))

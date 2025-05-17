@@ -141,9 +141,9 @@ pub fn index() {
         Get(_) => "GET",
         Post {..} => "POST",
         Head(_) => "HEAD",
-        Put(_) => "PUT",
-        Delete(_) => "DELETE",
-        Patch(_) => "PATCH"
+        Put {..} => "PUT",
+        Delete {..} => "DELETE",
+        Patch {..} => "PATCH"
     }));
   
     set_header!("Content-Type", "text/html; charset=utf-8");

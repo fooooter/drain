@@ -19,6 +19,7 @@
 [✔]	Redirections<br>
 [✖]     HTTP/2<br>
 [✖]     HTTP/3<br>
+[✖]     FastCGI
 
 
 ## About Drain

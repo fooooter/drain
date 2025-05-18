@@ -638,8 +638,8 @@ where
     T: AsyncRead + AsyncWrite + Unpin
 {
     let response_headers = HashMap::from([
-        (String::from("Accept"), format!("GET, HEAD, POST, {} OPTIONS{}",
-                                         if (&*ENDPOINT_LIBRARY).is_some() {"PUT, DELETE, PATCH"} else {""},
+        (String::from("Accept"), format!("GET, HEAD, POST,{} OPTIONS{}",
+                                         if (&*ENDPOINT_LIBRARY).is_some() {" PUT, DELETE, PATCH,"} else {""},
                                          if CONFIG.enable_trace {", TRACE"} else {""}))
     ]);
 

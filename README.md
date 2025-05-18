@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.3.0-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.3.1-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -101,6 +101,10 @@ Currently available fields are:
 
 Drain must be restarted in order for changes to take effect.
 Currently, the required fields are: `bind_host`, `bind_port`, `document_root` and `server_root`.
+
+PUT, DELETE and PATCH get enabled only when the library is loaded properly, otherwise these have no use, 
+as it would be dangerous for the server to arbitrarily guess, what they should do in certain scenarios.
+Therefore, they can be handled explicitly only inside the dynamic endpoint.
 
 ## Usage
 

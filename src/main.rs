@@ -53,7 +53,9 @@ where
                 },
                 _ => {
                     let accept_header = HashMap::from([
-                        (String::from("Accept"), String::from("GET, HEAD, POST, OPTIONS"))
+                        (String::from("Accept"), format!("GET, HEAD, POST,{} OPTIONS{}",
+                                                         if (&*ENDPOINT_LIBRARY).is_some() {" PUT, DELETE, PATCH,"} else {""},
+                                                         if CONFIG.enable_trace {", TRACE"} else {""}))
                     ]);
 
                     send_response(stream, 405, Some(accept_header), None, None, None).await
@@ -70,7 +72,7 @@ where
                 },
                 ServerError::UnsupportedMediaType => {
                     let response_headers: HashMap<String, String> = HashMap::from([
-                        (String::from("Accept-Post"), String::from("application/x-www-form-urlencoded, multipart/form-data")),
+                        (String::from("Accept"), String::from("application/x-www-form-urlencoded, multipart/form-data, text/plain, application/octet-stream")),
                         (String::from("Vary"), String::from("Content-Type"))
                     ]);
 

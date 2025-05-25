@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.3.2-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.3.5-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -19,7 +19,9 @@
 [✔]	Redirections<br>
 [✖]     HTTP/2<br>
 [✖]     HTTP/3<br>
-[✖]     FastCGI
+[✖]     CGI
+[✖]     .htaccess
+[✖]     Virtual hosting
 
 
 ## About Drain
@@ -276,3 +278,8 @@ pub struct SetCookie {
 Redirections are done once you append the `Location` header to `RESPONSE_HEADERS` in a dynamic page. 
 It's up to you, whether a page should return content in redirection response or not, but it's preferred to 
 return `None` after specifying `Location`. The status code is set by default to 302, but this will be changeable very soon.
+
+### Client's IP and port
+
+Client's IP and port can be obtained using `REMOTE_IP` (of the type `IpAddr`) and `REMOTE_PORT` (of the type `u16`) variables respectively inside the 
+dynamic endpoint.

@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
 use bstr::ByteSlice;
@@ -28,7 +29,7 @@ pub enum Request {
     Connect,
     Options,
     Trace(Vec<u8>),
-    Patch {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
+    Patch {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>}
 }
 
 impl Request {
@@ -67,7 +68,11 @@ impl Request {
 
             for kv in params_str.split('&') {
                 let param_split = kv.split_once('=').unwrap();
-                if let Some(_) = params.insert(String::from(param_split.0), String::from(param_split.1)) {
+                let (Ok(name_decoded), Ok(value_decoded)) = (urlencoding::decode(param_split.0), urlencoding::decode(param_split.1)) else {
+                    return Err(ServerError::InvalidRequest);
+                };
+
+                if let Some(_) = params.insert(String::from(name_decoded), String::from(value_decoded)) {
                     return Err(ServerError::InvalidRequest);
                 }
             }
@@ -117,7 +122,12 @@ static FILE_HANDLE_LIMIT: Semaphore = Semaphore::const_new(
     else { 255 }
 );
 
-pub async fn handle_get<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_get<T>(stream: &mut T,
+                           headers: &HashMap<String, String>,
+                           mut resource: String,
+                           params: &Option<HashMap<String, String>>,
+                           remote_ip: &IpAddr,
+                           remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -139,6 +149,8 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    remote_ip,
+                    remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
@@ -197,7 +209,17 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            let content = endpoint(&*resource, stream, Get(params), headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content = endpoint(
+                &*resource,
+                stream,
+                Get(params),
+                headers,
+                &mut response_headers,
+                &mut set_cookie,
+                &mut status,
+                remote_ip,
+                remote_port,
+                library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -296,7 +318,17 @@ where
         Err(_) => {
             if let Some(library) = &*ENDPOINT_LIBRARY {
                 let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-                let content = endpoint("not_found", stream, Get(params), headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+                let content = endpoint(
+                    "not_found",
+                    stream,
+                    Get(params),
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut 404u16,
+                    remote_ip,
+                    remote_port,
+                    library).await;
                 let content_type = response_headers.get("content-type");
 
                 if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -321,7 +353,12 @@ where
     }
 }
 
-pub async fn handle_head<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_head<T>(stream: &mut T,
+                            headers: &HashMap<String, String>,
+                            mut resource: String,
+                            params: &Option<HashMap<String, String>>,
+                            remote_ip: &IpAddr,
+                            remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -371,7 +408,7 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie, &mut status, library).await {
+            match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie, &mut status, remote_ip, remote_port, library).await {
                 Ok(content) => {
                     if let Some(c) = content {
                         let content_length = c.len().to_string();
@@ -428,7 +465,13 @@ where
     }
 }
 
-pub async fn handle_post<'a, T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_post<'a, T>(stream: &mut T,
+                                headers: &HashMap<String, String>,
+                                mut resource: String,
+                                data: &Option<RequestBody>,
+                                params: &Option<HashMap<String, String>>,
+                                remote_ip: &IpAddr,
+                                remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -450,6 +493,8 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    remote_ip,
+                    remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
@@ -508,7 +553,17 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            let content = endpoint(&*resource, stream, Post {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content = endpoint(
+                &*resource,
+                stream,
+                Post {data, params},
+                headers,
+                &mut response_headers,
+                &mut set_cookie,
+                &mut status,
+                remote_ip,
+                remote_port,
+                library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -608,7 +663,17 @@ where
         Err(_) => {
             if let Some(library) = &*ENDPOINT_LIBRARY {
                 let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-                let content = endpoint("not_found", stream, Post { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+                let content = endpoint(
+                    "not_found",
+                    stream,
+                    Post { data, params },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut 404u16,
+                    remote_ip,
+                    remote_port,
+                    library).await;
                 let content_type = response_headers.get("content-type");
 
                 if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -646,7 +711,13 @@ where
     send_response(stream,204, Some(response_headers), None, None, None).await
 }
 
-pub async fn handle_put<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_put<T>(stream: &mut T,
+                           headers: &HashMap<String, String>,
+                           mut resource: String,
+                           data: &Option<RequestBody>,
+                           params: &Option<HashMap<String, String>>,
+                           remote_ip: &IpAddr,
+                           remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -667,6 +738,8 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    remote_ip,
+                    remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
@@ -692,7 +765,17 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            let content = endpoint(&*resource, stream, Put {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content = endpoint(
+                &*resource,
+                stream,
+                Put {data, params},
+                headers,
+                &mut response_headers,
+                &mut set_cookie,
+                &mut status,
+                remote_ip,
+                remote_port,
+                library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -743,7 +826,17 @@ where
         }
 
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = endpoint("not_found", stream, Put { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+        let content = endpoint(
+            "not_found",
+            stream,
+            Put { data, params },
+            headers,
+            &mut response_headers,
+            &mut set_cookie,
+            &mut 404u16,
+            remote_ip,
+            remote_port,
+            library).await;
         let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -771,7 +864,13 @@ where
     send_response(stream,405, Some(response_headers), None, None, None).await
 }
 
-pub async fn handle_delete<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_delete<T>(stream: &mut T,
+                              headers: &HashMap<String, String>,
+                              mut resource: String,
+                              data: &Option<RequestBody>,
+                              params: &Option<HashMap<String, String>>,
+                              remote_ip: &IpAddr,
+                              remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -792,6 +891,8 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    remote_ip,
+                    remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
@@ -817,7 +918,17 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            let content = endpoint(&*resource, stream, Delete {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content = endpoint(
+                &*resource,
+                stream,
+                Delete {data, params},
+                headers,
+                &mut response_headers,
+                &mut set_cookie,
+                &mut status,
+                remote_ip,
+                remote_port,
+                library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -868,7 +979,16 @@ where
         }
 
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = endpoint("not_found", stream, Delete { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+        let content = endpoint(
+            "not_found",
+            stream,
+            Delete { data, params },
+            headers, &mut response_headers,
+            &mut set_cookie,
+            &mut 404u16,
+            remote_ip,
+            remote_port,
+            library).await;
         let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
@@ -896,7 +1016,13 @@ where
     send_response(stream,405, Some(response_headers), None, None, None).await
 }
 
-pub async fn handle_patch<T>(stream: &mut T, headers: &HashMap<String, String>, mut resource: String, data: &Option<RequestBody>, params: &Option<HashMap<String, String>>) -> Result<(), Box<dyn Error>>
+pub async fn handle_patch<T>(stream: &mut T,
+                             headers: &HashMap<String, String>,
+                             mut resource: String,
+                             data: &Option<RequestBody>,
+                             params: &Option<HashMap<String, String>>,
+                             remote_ip: &IpAddr,
+                             remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -917,6 +1043,8 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    remote_ip,
+                    remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
@@ -942,7 +1070,17 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            let content = endpoint(&*resource, stream, Patch {data, params}, headers, &mut response_headers, &mut set_cookie, &mut status, library).await;
+            let content = endpoint(
+                &*resource,
+                stream,
+                Patch {data, params},
+                headers,
+                &mut response_headers,
+                &mut set_cookie,
+                &mut status,
+                remote_ip,
+                remote_port,
+                library).await;
             let content_type = response_headers.get("content-type");
 
             match (content, content_type) {
@@ -993,7 +1131,17 @@ where
         }
 
         let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = endpoint("not_found", stream, Patch { data, params }, headers, &mut response_headers, &mut set_cookie, &mut 404u16, library).await;
+        let content = endpoint(
+            "not_found",
+            stream,
+            Patch { data, params },
+            headers,
+            &mut response_headers,
+            &mut set_cookie,
+            &mut 404u16,
+            remote_ip,
+            remote_port,
+            library).await;
         let content_type = response_headers.get("content-type");
 
         if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {

@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::Read;
+use std::net::IpAddr;
 use std::sync::LazyLock;
 use chrono::Utc;
 use brotli::{BrotliCompress, BrotliDecompress};
@@ -27,7 +28,13 @@ use crate::config::CONFIG;
 use crate::requests::Request;
 use crate::error::*;
 
-type Endpoint = fn(RequestData, &HashMap<String, String>, &mut HashMap<String, String>, &mut HashMap<String, SetCookie>, &mut u16) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
+type Endpoint = fn(RequestData,
+                   &HashMap<String, String>,
+                   &mut HashMap<String, String>,
+                   &mut HashMap<String, SetCookie>,
+                   &mut u16,
+                   &IpAddr,
+                   &u16) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
 
 pub static ENDPOINT_LIBRARY: LazyLock<Option<Library>> = LazyLock::new(|| {
     if let Some(endpoints_library) = &CONFIG.endpoints_library {
@@ -573,6 +580,8 @@ pub async fn endpoint<'a, T>(endpoint: &str,
                              response_headers: &mut HashMap<String, String>,
                              set_cookie: &mut HashMap<String, SetCookie>,
                              status: &mut u16,
+                             remote_ip: &IpAddr,
+                             remote_port: &u16,
                              library: &Library) -> Result<Option<Vec<u8>>, LibError>
 where
     T: AsyncRead + AsyncWrite + Unpin
@@ -581,7 +590,7 @@ where
             let endpoint_symbol = String::from(endpoint).replace(|x| x == '/' || x == '\\', "::");
             let e = library.get::<Endpoint>(endpoint_symbol.as_bytes())?;
 
-            e(request_data, &request_headers, response_headers, set_cookie, status)
+            e(request_data, &request_headers, response_headers, set_cookie, status, remote_ip, remote_port)
     } {
         Ok(content) => Ok(content),
         Err(e) => {

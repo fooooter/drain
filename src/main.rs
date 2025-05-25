@@ -7,6 +7,7 @@ mod error;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -23,7 +24,7 @@ use crate::error::ServerError;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::util::ResourceType::Dynamic;
 
-async fn handle_connection<T>(stream: &mut T, keep_alive: &mut bool) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(stream: &mut T, keep_alive: &mut bool, remote_ip: &IpAddr, remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -31,19 +32,19 @@ where
         Ok(request) => {
             match request {
                 Get {resource, params, headers} =>
-                    handle_get(stream, &headers, resource, &params).await,
+                    handle_get(stream, &headers, resource, &params, remote_ip, remote_port).await,
                 Head {resource, params, headers} =>
-                    handle_head(stream, &headers, resource, &params).await,
+                    handle_head(stream, &headers, resource, &params, remote_ip, remote_port).await,
                 Post {resource, params, headers, data} =>
-                    handle_post(stream, &headers, resource, &data, &params).await,
+                    handle_post(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
                 Put {resource, params, headers, data} =>
-                    handle_put(stream, &headers, resource, &data, &params).await,
+                    handle_put(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
                 Delete {resource, params, headers, data} =>
-                    handle_delete(stream, &headers, resource, &data, &params).await,
+                    handle_delete(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
                 Options {..} =>
                     handle_options(stream).await,
                 Patch {resource, params, headers, data} =>
-                    handle_patch(stream, &headers, resource, &data, &params).await,
+                    handle_patch(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
                 Trace(request) if CONFIG.enable_trace => {
                     let response_headers: HashMap<String, String> = HashMap::from([
                         (String::from("Content-Type"), String::from("message/http"))
@@ -130,11 +131,24 @@ async fn main() -> io::Result<()> {
                 match ssl {
                     Ok(ssl) => {
                         let (stream, _) = listener.accept().await?;
+                        let remote_addr = match stream.peer_addr() {
+                            Ok(addr) => addr,
+                            Err(e1) => {
+                                eprintln!("[main():{}] An error occurred while getting the client's address.\n\
+                                                       Error information:\n{e1}", line!());
+
+                                continue;
+                            }
+                        };
+
+                        let remote_ip = remote_addr.ip();
+                        let remote_port = remote_addr.port();
+
                         let mut stream = SslStream::new(ssl, stream)?;
                         if let Err(e1) = Pin::new(&mut stream).accept().await {
                             eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
-                                        Error information:\n{e1}\n\
-                                        Continuing with the regular HTTP...", line!());
+                                                   Error information:\n{e1}\n\
+                                                   Continuing with the regular HTTP...", line!());
 
                             break;
                         }
@@ -155,7 +169,7 @@ async fn main() -> io::Result<()> {
                                     _ => {}
                                 }
 
-                                if let Err(e) = handle_connection(&mut stream, &mut keep_alive).await {
+                                if let Err(e) = handle_connection(&mut stream, &mut keep_alive, &remote_ip, &remote_port).await {
                                     eprintln!("[main():{}] An error occurred while handling connection:\
                                     \n{e}\n", line!());
                                 }
@@ -164,8 +178,8 @@ async fn main() -> io::Result<()> {
                     },
                     Err(e) => {
                         eprintln!("[main():{}] An error occurred while configuring SSL for a secure connection.\n\
-                                    Error information:\n{e}\n\
-                                    Continuing with the regular HTTP.", line!());
+                                               Error information:\n{e}\n\
+                                               Continuing with the regular HTTP.", line!());
 
                         break;
                     }
@@ -181,6 +195,18 @@ async fn main() -> io::Result<()> {
     println!("Listening on {}:{}", bind_host, bind_port);
     loop {
         let (mut stream, _) = listener.accept().await?;
+        let remote_addr = match stream.peer_addr() {
+            Ok(addr) => addr,
+            Err(e1) => {
+                eprintln!("[main():{}] An error occurred while getting the client's address.\n\
+                                       Error information:\n{e1}", line!());
+
+                continue;
+            }
+        };
+
+        let remote_ip = remote_addr.ip();
+        let remote_port = remote_addr.port();
 
         spawn(async move {
             let mut keep_alive = true;
@@ -199,7 +225,7 @@ async fn main() -> io::Result<()> {
                     _ => {}
                 }
 
-                if let Err(e) = handle_connection(&mut stream, &mut keep_alive).await {
+                if let Err(e) = handle_connection(&mut stream, &mut keep_alive, &remote_ip, &remote_port).await {
                     eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
                 }
             }

@@ -19,9 +19,9 @@
 [✔]	Redirections<br>
 [✖]     HTTP/2<br>
 [✖]     HTTP/3<br>
-[✖]     CGI
-[✖]     .htaccess
-[✖]     Virtual hosting
+[✖]     CGI<br>
+[✖]     .htaccess<br>
+[✖]     Virtual hosting<br>
 
 
 ## About Drain

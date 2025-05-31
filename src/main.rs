@@ -164,7 +164,12 @@ async fn main() -> io::Result<()> {
                                 match timeout(Duration::from_secs((&CONFIG).request_timeout), Pin::new(&mut stream).peek(&mut buf)).await {
                                     Ok(Ok(0)) | Err(_) => break,
                                     Ok(Err(e)) => {
+                                        if e.to_string().eq("the SSL session has been shut down") {
+                                            break;
+                                        }
+
                                         eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                                        break;
                                     },
                                     _ => {}
                                 }

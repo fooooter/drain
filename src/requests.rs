@@ -47,9 +47,9 @@ impl Request {
         let request_line = &request_iter.next().unwrap();
         let mut iter_req_line = request_line.split_whitespace();
 
-        let req_type = iter_req_line.next().unwrap().to_uppercase();
-        let resource_with_params = iter_req_line.next().unwrap().trim();
-        let http_version = iter_req_line.next().unwrap().trim();
+        let req_type = iter_req_line.next().unwrap();
+        let resource_with_params = iter_req_line.next().unwrap();
+        let http_version = iter_req_line.next().unwrap();
         let mut resource = String::from(resource_with_params);
         let mut params: HashMap<String, String> = HashMap::new();
 
@@ -100,7 +100,7 @@ impl Request {
             }
         }
 
-        let req = match req_type.trim() {
+        let req = match req_type {
             "GET" => Self::Get {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "HEAD" => Self::Head {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
             "POST" => Self::Post {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},

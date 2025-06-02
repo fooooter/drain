@@ -44,5 +44,12 @@
   "enable_trace": false,
   "enable_server_header": true,
   "request_timeout": 10,
-  "be_verbose": false
+  "be_verbose": false,
+  "cgi": {
+    "enabled": true,
+    "cgi_server": "php-cgi",
+    "cgi_rules": {
+      "*.php": true
+    }
+  }
 }

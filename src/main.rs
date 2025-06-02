@@ -3,6 +3,8 @@ mod util;
 mod pages;
 mod config;
 mod error;
+#[cfg(feature = "cgi")]
+mod cgi;
 
 use std::collections::HashMap;
 use std::env;
@@ -20,31 +22,144 @@ use crate::requests::Request::{Get, Head, Options, Post, Trace, Put, Delete, Pat
 use crate::requests::*;
 use crate::util::*;
 use crate::config::CONFIG;
+#[cfg(feature = "cgi")]
+use crate::cgi::handle_cgi;
+#[cfg(feature = "cgi")]
+use crate::cgi::CGIStatus;
 use crate::error::ServerError;
+#[cfg(feature = "cgi")]
+use crate::pages::bad_gateway::bad_gateway;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::util::ResourceType::Dynamic;
 
-async fn handle_connection<T>(stream: &mut T, keep_alive: &mut bool, remote_ip: &IpAddr, remote_port: &u16) -> Result<(), Box<dyn Error>>
+async fn handle_connection<T>(
+    stream: &mut T,
+    keep_alive: &mut bool,
+    local_ip: &IpAddr,
+    remote_ip: &IpAddr,
+    remote_port: &u16,
+    #[cfg(feature = "cgi")]
+    https: bool) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
     match receive_request(stream, keep_alive).await {
         Ok(request) => {
+            #[cfg(feature = "cgi")]
+            match request {
+                Get {resource, params, query_string, headers} => {
+                    match &CONFIG.cgi {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                            match handle_cgi(stream, &headers, &resource, "GET", query_string, None, local_ip, remote_ip, remote_port, https).await {
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Err(_) => return bad_gateway(stream).await,
+                                _ => {}
+                            }
+                        },
+                        _ => {}
+                    }
+                    handle_get(stream, &headers, resource, &params, local_ip, remote_ip, remote_port).await
+                },
+                Head {resource, params, query_string, headers} => {
+                    match &CONFIG.cgi {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                            match handle_cgi(stream, &headers, &resource, "HEAD", query_string, None, local_ip, remote_ip, remote_port, https).await {
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Err(_) => return bad_gateway(stream).await,
+                                _ => {}
+                            }
+                        },
+                        _ => {}
+                    }
+                    handle_head(stream, &headers, resource, &params, local_ip, remote_ip, remote_port).await
+                },
+                Post {resource, params, query_string, headers, data, cgi_data} => {
+                    match &CONFIG.cgi {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                            match handle_cgi(stream, &headers, &resource, "POST", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Err(_) => return bad_gateway(stream).await,
+                                _ => {}
+                            }
+                        },
+                        _ => {}
+                    }
+                    handle_post(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                },
+                Put {resource, params, query_string, headers, data, cgi_data} => {
+                    match &CONFIG.cgi {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                            match handle_cgi(stream, &headers, &resource, "PUT", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Err(_) => return bad_gateway(stream).await,
+                                _ => {}
+                            }
+                        },
+                        _ => {}
+                    }
+                    handle_put(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                },
+                Delete {resource, params, query_string, headers, data, cgi_data} => {
+                    match &CONFIG.cgi {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                            match handle_cgi(stream, &headers, &resource, "DELETE", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Err(_) => return bad_gateway(stream).await,
+                                _ => {}
+                            }
+                        },
+                        _ => {}
+                    }
+                    handle_delete(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                },
+                Options {..} =>
+                    handle_options(stream).await,
+                Patch {resource, params, query_string, headers, data, cgi_data} => {
+                    match &CONFIG.cgi {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                            match handle_cgi(stream, &headers, &resource, "PATCH", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Err(_) => return bad_gateway(stream).await,
+                                _ => {}
+                            }
+                        },
+                        _ => {}
+                    }
+                    handle_patch(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                },
+                Trace(request) if CONFIG.enable_trace => {
+                    let response_headers: HashMap<String, String> = HashMap::from([
+                        (String::from("Content-Type"), String::from("message/http"))
+                    ]);
+
+                    send_response(stream, 200, Some(response_headers), Some(request), None, Some(Dynamic)).await
+                },
+                _ => {
+                    let accept_header = HashMap::from([
+                        (String::from("Accept"), format!("GET, HEAD, POST,{} OPTIONS{}",
+                                                         if (&*ENDPOINT_LIBRARY).is_some() {" PUT, DELETE, PATCH,"} else {""},
+                                                         if CONFIG.enable_trace {", TRACE"} else {""}))
+                    ]);
+
+                    send_response(stream, 405, Some(accept_header), None, None, None).await
+                }
+            }
+            #[cfg(not(feature = "cgi"))]
             match request {
                 Get {resource, params, headers} =>
-                    handle_get(stream, &headers, resource, &params, remote_ip, remote_port).await,
+                    handle_get(stream, &headers, resource, &params, local_ip, remote_ip, remote_port).await,
                 Head {resource, params, headers} =>
-                    handle_head(stream, &headers, resource, &params, remote_ip, remote_port).await,
+                    handle_head(stream, &headers, resource, &params, local_ip, remote_ip, remote_port).await,
                 Post {resource, params, headers, data} =>
-                    handle_post(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
+                    handle_post(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await,
                 Put {resource, params, headers, data} =>
-                    handle_put(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
+                    handle_put(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await,
                 Delete {resource, params, headers, data} =>
-                    handle_delete(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
+                    handle_delete(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await,
                 Options {..} =>
                     handle_options(stream).await,
                 Patch {resource, params, headers, data} =>
-                    handle_patch(stream, &headers, resource, &data, &params, remote_ip, remote_port).await,
+                    handle_patch(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await,
                 Trace(request) if CONFIG.enable_trace => {
                     let response_headers: HashMap<String, String> = HashMap::from([
                         (String::from("Content-Type"), String::from("message/http"))
@@ -96,7 +211,10 @@ where
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    #[cfg(not(feature = "cgi"))]
     println!("Drain {}, starting...", env!("CARGO_PKG_VERSION"));
+    #[cfg(feature = "cgi")]
+    println!("Drain {} (CGI version), starting...", env!("CARGO_PKG_VERSION"));
 
     let bind_host = &CONFIG.bind_host;
 
@@ -107,6 +225,16 @@ async fn main() -> io::Result<()> {
             },
             _ => {
                 println!("Encoding disabled.");
+            }
+        }
+
+        #[cfg(feature = "cgi")]
+        match &CONFIG.cgi {
+            Some(cgi) if cgi.enabled => {
+                println!("CGI enabled. Scripts will be executed using {}", cgi.cgi_server);
+            },
+            _ => {
+                println!("CGI disabled.");
             }
         }
 
@@ -131,6 +259,15 @@ async fn main() -> io::Result<()> {
                 match ssl {
                     Ok(ssl) => {
                         let (stream, _) = listener.accept().await?;
+                        let local_addr = match stream.local_addr() {
+                            Ok(addr) => addr,
+                            Err(e1) => {
+                                eprintln!("[main():{}] An error occurred while getting the server's address.\n\
+                                                       Error information:\n{e1}", line!());
+
+                                continue;
+                            }
+                        };
                         let remote_addr = match stream.peer_addr() {
                             Ok(addr) => addr,
                             Err(e1) => {
@@ -141,11 +278,18 @@ async fn main() -> io::Result<()> {
                             }
                         };
 
+                        let local_ip = local_addr.ip();
                         let remote_ip = remote_addr.ip();
                         let remote_port = remote_addr.port();
 
                         let mut stream = SslStream::new(ssl, stream)?;
                         if let Err(e1) = Pin::new(&mut stream).accept().await {
+                            if let Some(ssl_error) = e1.ssl_error() {
+                                if ssl_error.to_string().contains("http request") {
+                                    continue;
+                                }
+                            }
+
                             eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
                                                    Error information:\n{e1}\n\
                                                    Continuing with the regular HTTP...", line!());
@@ -174,7 +318,18 @@ async fn main() -> io::Result<()> {
                                     _ => {}
                                 }
 
-                                if let Err(e) = handle_connection(&mut stream, &mut keep_alive, &remote_ip, &remote_port).await {
+                                #[cfg(feature = "cgi")]
+                                let https_enabled = true;
+
+                                if let Err(e) = handle_connection(
+                                    &mut stream,
+                                    &mut keep_alive,
+                                    &local_ip,
+                                    &remote_ip,
+                                    &remote_port,
+                                    #[cfg(feature = "cgi")]
+                                    https_enabled
+                                ).await {
                                     eprintln!("[main():{}] An error occurred while handling connection:\
                                     \n{e}\n", line!());
                                 }
@@ -200,6 +355,15 @@ async fn main() -> io::Result<()> {
     println!("Listening on {}:{}", bind_host, bind_port);
     loop {
         let (mut stream, _) = listener.accept().await?;
+        let local_addr = match stream.local_addr() {
+            Ok(addr) => addr,
+            Err(e1) => {
+                eprintln!("[main():{}] An error occurred while getting the server's address.\n\
+                                       Error information:\n{e1}", line!());
+
+                continue;
+            }
+        };
         let remote_addr = match stream.peer_addr() {
             Ok(addr) => addr,
             Err(e1) => {
@@ -210,6 +374,7 @@ async fn main() -> io::Result<()> {
             }
         };
 
+        let local_ip = local_addr.ip();
         let remote_ip = remote_addr.ip();
         let remote_port = remote_addr.port();
 
@@ -230,7 +395,18 @@ async fn main() -> io::Result<()> {
                     _ => {}
                 }
 
-                if let Err(e) = handle_connection(&mut stream, &mut keep_alive, &remote_ip, &remote_port).await {
+                #[cfg(feature = "cgi")]
+                let https_enabled = false;
+
+                if let Err(e) = handle_connection(
+                    &mut stream,
+                    &mut keep_alive,
+                    &local_ip,
+                    &remote_ip,
+                    &remote_port,
+                    #[cfg(feature = "cgi")]
+                    https_enabled
+                ).await {
                     eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
                 }
             }

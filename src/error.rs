@@ -11,7 +11,9 @@ pub enum ServerError {
     MalformedPayload,
     InvalidRequest,
     BodyTooLarge,
-    VersionNotSupported
+    VersionNotSupported,
+    #[cfg(feature = "cgi")]
+    BadGateway
 }
 
 impl Display for ServerError {
@@ -24,7 +26,9 @@ impl Display for ServerError {
             ServerError::MalformedPayload => write!(f, "Payload contained malformed data."),
             ServerError::InvalidRequest => write!(f, "A request was malformed."),
             ServerError::BodyTooLarge => write!(f, "Content sent by the client was too large."),
-            ServerError::VersionNotSupported => write!(f, "HTTP version not supported.")
+            ServerError::VersionNotSupported => write!(f, "HTTP version not supported."),
+            #[cfg(feature = "cgi")]
+            ServerError::BadGateway => write!(f, "A problem occurred within the gateway."),
         }
     }
 }

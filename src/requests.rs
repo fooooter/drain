@@ -19,17 +19,65 @@ use drain_common::RequestData::*;
 use drain_common::cookies::SetCookie;
 use tokio::sync::Semaphore;
 use crate::util::ResourceType::{Dynamic, Static};
+#[cfg(feature = "cgi")]
+use crate::cgi::CGIData;
 
 pub enum Request {
-    Get {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
-    Head {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>},
-    Post {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
-    Put {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
-    Delete {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>},
+    Get {
+        resource: String,
+        params: Option<HashMap<String, String>>,
+        #[cfg(feature = "cgi")]
+        query_string: String,
+        headers: HashMap<String, String>
+    },
+    Head {
+        resource: String,
+        params: Option<HashMap<String, String>>,
+        #[cfg(feature = "cgi")]
+        query_string: String,
+        headers: HashMap<String, String>
+    },
+    Post {
+        resource: String,
+        params: Option<HashMap<String, String>>,
+        #[cfg(feature = "cgi")]
+        query_string: String,
+        headers: HashMap<String, String>,
+        data: Option<RequestBody>,
+        #[cfg(feature = "cgi")]
+        cgi_data: Option<CGIData>
+    },
+    Put {
+        resource: String,
+        params: Option<HashMap<String, String>>,
+        #[cfg(feature = "cgi")]
+        query_string: String,
+        headers: HashMap<String, String>,
+        data: Option<RequestBody>,
+        #[cfg(feature = "cgi")]
+        cgi_data: Option<CGIData>},
+    Delete {
+        resource: String,
+        params: Option<HashMap<String, String>>,
+        #[cfg(feature = "cgi")]
+        query_string: String,
+        headers: HashMap<String, String>,
+        data: Option<RequestBody>,
+        #[cfg(feature = "cgi")]
+        cgi_data: Option<CGIData>},
     Connect,
     Options,
     Trace(Vec<u8>),
-    Patch {resource: String, params: Option<HashMap<String, String>>, headers: HashMap<String, String>, data: Option<RequestBody>}
+    Patch {
+        resource: String,
+        params: Option<HashMap<String, String>>,
+        #[cfg(feature = "cgi")]
+        query_string: String,
+        headers: HashMap<String, String>,
+        data: Option<RequestBody>,
+        #[cfg(feature = "cgi")]
+        cgi_data: Option<CGIData>
+    }
 }
 
 impl Request {
@@ -61,12 +109,17 @@ impl Request {
             return Err(ServerError::VersionNotSupported);
         }
 
+        #[cfg(feature = "cgi")]
+        let mut query_string: String = String::from("");
+        #[cfg(not(feature = "cgi"))]
+        let query_string: String;
+
         if request_line.contains('?') {
             let resource_split = resource_with_params.split_once('?').unwrap();
             resource = String::from(resource_split.0);
-            let params_str = String::from(resource_split.1);
+            query_string = String::from(resource_split.1);
 
-            for kv in params_str.split('&') {
+            for kv in query_string.split('&') {
                 let param_split = kv.split_once('=').unwrap();
                 let (Ok(name_decoded), Ok(value_decoded)) = (urlencoding::decode(param_split.0), urlencoding::decode(param_split.1)) else {
                     return Err(ServerError::InvalidRequest);
@@ -101,14 +154,62 @@ impl Request {
         }
 
         let req = match req_type {
-            "GET" => Self::Get {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
-            "HEAD" => Self::Head {resource, params: if params.is_empty() {None} else {Some(params)}, headers},
-            "POST" => Self::Post {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
-            "PUT" => Self::Put {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
-            "DELETE" => Self::Delete {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
+            "GET" => Self::Get {
+                resource,
+                params: if params.is_empty() {None} else {Some(params)},
+                #[cfg(feature = "cgi")]
+                query_string,
+                headers
+            },
+            "HEAD" => Self::Head {
+                resource,
+                params: if params.is_empty() {None} else {Some(params)},
+                #[cfg(feature = "cgi")]
+                query_string,
+                headers
+            },
+            "POST" => Self::Post {
+                resource,
+                params: if params.is_empty() {None} else {Some(params)},
+                #[cfg(feature = "cgi")]
+                query_string,
+                headers,
+                data: None,
+                #[cfg(feature = "cgi")]
+                cgi_data: None
+            },
+            "PUT" => Self::Put {
+                resource,
+                params: if params.is_empty() {None} else {Some(params)},
+                #[cfg(feature = "cgi")]
+                query_string,
+                headers,
+                data: None,
+                #[cfg(feature = "cgi")]
+                cgi_data: None
+            },
+            "DELETE" => Self::Delete {
+                resource,
+                params: if params.is_empty() {None} else {Some(params)},
+                #[cfg(feature = "cgi")]
+                query_string,
+                headers,
+                data: None,
+                #[cfg(feature = "cgi")]
+                cgi_data: None
+            },
             "CONNECT" => Self::Connect,
             "OPTIONS" => Self::Options,
-            "PATCH" => Self::Patch {resource, params: if params.is_empty() {None} else {Some(params)}, headers, data: None},
+            "PATCH" => Self::Patch {
+                resource,
+                params: if params.is_empty() {None} else {Some(params)},
+                #[cfg(feature = "cgi")]
+                query_string,
+                headers,
+                data: None,
+                #[cfg(feature = "cgi")]
+                cgi_data: None
+            },
             _ => return Err(ServerError::InvalidRequest),
         };
         Ok(req)
@@ -126,6 +227,7 @@ pub async fn handle_get<T>(stream: &mut T,
                            headers: &HashMap<String, String>,
                            mut resource: String,
                            params: &Option<HashMap<String, String>>,
+                           local_ip: &IpAddr,
                            remote_ip: &IpAddr,
                            remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
@@ -149,6 +251,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -217,6 +320,7 @@ where
                 &mut response_headers,
                 &mut set_cookie,
                 &mut status,
+                local_ip,
                 remote_ip,
                 remote_port,
                 library).await;
@@ -326,6 +430,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut 404u16,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -357,6 +462,7 @@ pub async fn handle_head<T>(stream: &mut T,
                             headers: &HashMap<String, String>,
                             mut resource: String,
                             params: &Option<HashMap<String, String>>,
+                            local_ip: &IpAddr,
                             remote_ip: &IpAddr,
                             remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
@@ -408,7 +514,7 @@ where
         if endpoints.contains(&resource) {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
-            match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie, &mut status, remote_ip, remote_port, library).await {
+            match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie, &mut status, local_ip, remote_ip, remote_port, library).await {
                 Ok(content) => {
                     if let Some(c) = content {
                         let content_length = c.len().to_string();
@@ -470,6 +576,7 @@ pub async fn handle_post<'a, T>(stream: &mut T,
                                 mut resource: String,
                                 data: &Option<RequestBody>,
                                 params: &Option<HashMap<String, String>>,
+                                local_ip: &IpAddr,
                                 remote_ip: &IpAddr,
                                 remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
@@ -493,6 +600,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -561,6 +669,7 @@ where
                 &mut response_headers,
                 &mut set_cookie,
                 &mut status,
+                local_ip,
                 remote_ip,
                 remote_port,
                 library).await;
@@ -671,6 +780,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut 404u16,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -716,6 +826,7 @@ pub async fn handle_put<T>(stream: &mut T,
                            mut resource: String,
                            data: &Option<RequestBody>,
                            params: &Option<HashMap<String, String>>,
+                           local_ip: &IpAddr,
                            remote_ip: &IpAddr,
                            remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
@@ -738,6 +849,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -773,6 +885,7 @@ where
                 &mut response_headers,
                 &mut set_cookie,
                 &mut status,
+                local_ip,
                 remote_ip,
                 remote_port,
                 library).await;
@@ -834,6 +947,7 @@ where
             &mut response_headers,
             &mut set_cookie,
             &mut 404u16,
+            local_ip,
             remote_ip,
             remote_port,
             library).await;
@@ -869,6 +983,7 @@ pub async fn handle_delete<T>(stream: &mut T,
                               mut resource: String,
                               data: &Option<RequestBody>,
                               params: &Option<HashMap<String, String>>,
+                              local_ip: &IpAddr,
                               remote_ip: &IpAddr,
                               remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
@@ -891,6 +1006,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -926,6 +1042,7 @@ where
                 &mut response_headers,
                 &mut set_cookie,
                 &mut status,
+                local_ip,
                 remote_ip,
                 remote_port,
                 library).await;
@@ -986,6 +1103,7 @@ where
             headers, &mut response_headers,
             &mut set_cookie,
             &mut 404u16,
+            local_ip,
             remote_ip,
             remote_port,
             library).await;
@@ -1021,6 +1139,7 @@ pub async fn handle_patch<T>(stream: &mut T,
                              mut resource: String,
                              data: &Option<RequestBody>,
                              params: &Option<HashMap<String, String>>,
+                             local_ip: &IpAddr,
                              remote_ip: &IpAddr,
                              remote_port: &u16) -> Result<(), Box<dyn Error>>
 where
@@ -1043,6 +1162,7 @@ where
                     &mut response_headers,
                     &mut set_cookie,
                     &mut deny_action,
+                    local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
@@ -1078,6 +1198,7 @@ where
                 &mut response_headers,
                 &mut set_cookie,
                 &mut status,
+                local_ip,
                 remote_ip,
                 remote_port,
                 library).await;
@@ -1139,6 +1260,7 @@ where
             &mut response_headers,
             &mut set_cookie,
             &mut 404u16,
+            local_ip,
             remote_ip,
             remote_port,
             library).await;

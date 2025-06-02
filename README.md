@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.3.6-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.4.0-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -19,8 +19,7 @@
 [✔]	Redirections<br>
 [✖]     HTTP/2<br>
 [✖]     HTTP/3<br>
-[✖]     CGI<br>
-[✖]     .htaccess<br>
+[✔]     CGI<br>
 [✖]     Virtual hosting<br>
 
 
@@ -44,9 +43,13 @@ Currently only OpenSSL and libc.
 
 To build Drain, run `cargo build` in the root of a source.
 
+### CGI feature flag
+
+In order to compile-in support for the CGI interface (for executing PHP scripts, for example), add `"cgi"` to the `default` field in Cargo.toml.
+
 ## Configuration
 
-Drain can be configured using config.json file. In order to use a config.json file, you have to specify it in `DRAIN_CONFIG` environment variable. 
+Drain can be configured using config.json file. In order to use a config.json file, you have to specify it in `DRAIN_CONFIG` environment variable.
 Currently available fields are:
 
 - `max_content_length` - maximum length of request's body. If exceeded, the server returns 413 status. Default is 1 GiB (1073741824 bytes).
@@ -54,7 +57,9 @@ Currently available fields are:
 `response_headers` HashMap.
 - `access_control`:
   * `list` - here you can control, which resources will be returned to the client and which won't through a list of key-value pairs. 
-  In order to deny access to a resource, type "deny" (default action is "allow"). It uses Glob UNIX shell-like path syntax.
+  In order to deny access to a resources matching the given pattern, type "deny" (default action is "allow").
+  It uses Glob UNIX shell-like path syntax, so you can match extensions or even whole directories recursively!
+  Directories are relative to `document_root`.
   * `deny_action` - it's an unsigned integer corresponding to either 404 or 403 HTTP status codes, which will be returned by the server alongside the 
   page corresponding to each status if access to the resource is denied. For safety reasons, the default is 404, so that a client won't
   know if the resource is unavailable or access to it is denied.
@@ -101,9 +106,18 @@ Currently available fields are:
 - `enable_server_header` - whether to enable the `Server` header or not. It contains "Drain " + its current version. True by default.
 - `request_timeout` - a time the server will wait for data to be sent by the client; if it takes too long, the server will close the connection. Set to 10 seconds by default.
 - `be_verbose` - toggle verbose output. False by default.
+- `cgi` (CGI feature flag only!):
+  * `enabled` - enable CGI in runtime.
+  * `cgi_server` - a path to the application, which will process CGI requests (for example `php-cgi`)
+  * `cgi_rules` - here you can control, of which resources the processing by the CGI server will be attempted, and for which won't through a list of key-value pairs.
+  In order to have the CGI server process resources matching the given pattern, set `true` (default action is `false`). A resource is, for example, `index.php`.
+  It uses Glob UNIX shell-like path syntax, so you can match extensions or even whole directories recursively!
+  Directories are relative to `document_root`.
 
 Drain must be restarted in order for changes to take effect.
 Currently, the required fields are: `bind_host`, `bind_port`, `document_root` and `server_root`.
+
+Exemplar config.json file is available in the root of this repository. Feel free to change it to your preferences.
 
 PUT, DELETE and PATCH get enabled only when the library is loaded properly, otherwise these have no use, 
 as it would be dangerous for the server to arbitrarily guess, what they should do in certain scenarios.
@@ -281,5 +295,10 @@ return `None` after specifying `Location`. The status code is set by default to 
 
 ### Client's IP and port
 
-Client's IP and port can be obtained using `REMOTE_IP` (of the type `IpAddr`) and `REMOTE_PORT` (of the type `u16`) variables respectively inside the 
+Client's IP and port can be obtained using `REMOTE_IP` (of the type `&IpAddr`) and `REMOTE_PORT` (of the type `&u16`) variables respectively inside the 
 dynamic endpoint.
+
+### Server's IP, hostname and port
+
+Server's IP, hostname and port can be obtained using `LOCAL_IP` (of the type `&IpAddr`), `LOCAL_HOSTNAME` (of the type `&String`) and `LOCAL_PORT` (of the type `&u16`) variables
+respectively inside the dynamic endpoint.

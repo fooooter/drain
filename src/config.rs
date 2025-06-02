@@ -13,7 +13,7 @@ use tokio::task;
 #[derive(Deserialize)]
 pub struct AccessControl {
     pub deny_action: u16,
-    pub list: HashMap<String, String>
+    list: HashMap<String, String>
 }
 
 #[derive(Deserialize)]
@@ -31,6 +31,14 @@ pub struct Https {
     pub cipher_list: String,
     pub ssl_private_key_file: String,
     pub ssl_certificate_file: String
+}
+
+#[cfg(feature = "cgi")]
+#[derive(Deserialize)]
+pub struct CGI {
+    pub enabled: bool,
+    pub cgi_server: String,
+    cgi_rules: HashMap<String, bool>
 }
 
 #[derive(Deserialize)]
@@ -56,7 +64,9 @@ pub struct Config {
     #[serde(default = "Config::default_request_timeout")]
     pub request_timeout: u64,
     #[serde(default)]
-    pub be_verbose: bool
+    pub be_verbose: bool,
+    #[cfg(feature = "cgi")]
+    pub cgi: Option<CGI>
 }
 
 impl Config {
@@ -266,5 +276,21 @@ impl Https {
 
         let ssl_ctx = ssl_ctx_builder.build();
         Ssl::new(&ssl_ctx)
+    }
+}
+
+#[cfg(feature = "cgi")]
+impl CGI {
+    pub fn should_attempt_cgi(&self, resource: &String) -> bool {
+        for (k, v) in &self.cgi_rules {
+            if let Ok(paths) = glob(&*format!("{}/{k}", &CONFIG.document_root)) {
+                for entry in paths.filter_map(Result::ok) {
+                    if entry.to_string_lossy().eq(&*format!("{}/{resource}", &CONFIG.document_root)) {
+                        return *v;
+                    }
+                }
+            }
+        }
+        false
     }
 }

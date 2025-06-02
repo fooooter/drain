@@ -26,6 +26,8 @@ use regex::bytes::Regex;
 use crate::pages::internal_server_error::internal_server_error;
 use crate::config::CONFIG;
 use crate::requests::Request;
+#[cfg(feature = "cgi")]
+use crate::cgi::CGIData;
 use crate::error::*;
 
 type Endpoint = fn(RequestData,
@@ -33,6 +35,9 @@ type Endpoint = fn(RequestData,
                    &mut HashMap<String, String>,
                    &mut HashMap<String, SetCookie>,
                    &mut u16,
+                   &String,
+                   &IpAddr,
+                   &u16,
                    &IpAddr,
                    &u16) -> Result<Option<Vec<u8>>, Box<dyn Any + Send>>;
 
@@ -370,10 +375,192 @@ where
 
     let mut request = Request::parse_from_string(&request_string, keep_alive)?;
 
+    #[cfg(feature = "cgi")]
+    if let  Request::Post {data, headers, cgi_data, ..} |
+            Request::Put {data, headers, cgi_data, ..} |
+            Request::Patch {data, headers, cgi_data, ..} |
+            Request::Delete {data, headers, cgi_data, ..} = &mut request {
+        let mut buffer = BytesMut::with_capacity(
+            match headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
+                Ok(l) if l > 0 => {
+                    if l > CONFIG.max_content_length {
+                        return Err(ServerError::BodyTooLarge);
+                    }
+                    l
+                },
+                Ok(l) if l == 0 => {
+                    return Ok(request);
+                },
+                _ => {
+                    return Err(ServerError::InvalidRequest);
+                }
+            }
+        );
+
+        if let Err(e1) = reader.read_buf(&mut buffer).await {
+            eprintln!("[receive_request():{}] An error occurred while reading a request from a client.\n\
+                        Error information:\n{e1}\n\
+                        Attempting to close connection...", line!());
+            if let Err(e2) = stream.shutdown().await {
+                eprintln!("[receive_request():{}] FAILED. Error information:\n{e2}", line!());
+            }
+            panic!("Unrecoverable error occurred while handling connection.");
+        }
+
+        let mut payload: Vec<u8> = Vec::new();
+
+        match (headers.get("content-encoding"), CONFIG.get_supported_encodings()) {
+            (Some(content_encoding), Some(supported_encodings))
+            if supported_encodings.contains(content_encoding) => {
+                if content_encoding.eq("gzip") {
+                    if let Err(e) = GzDecoder::new(&*buffer).read_to_end(&mut payload) {
+                        eprintln!("[receive_request():{}] An error occurred while decompressing the request body using GZIP:\n{e}\n\
+                                    Sending 406 status to the client...", line!());
+
+                        return Err(ServerError::DecompressionError(e));
+                    }
+                } else if content_encoding.eq("br") {
+                    if let Err(e) = BrotliDecompress(&mut &*buffer, &mut payload) {
+                        eprintln!("[receive_request():{}] An error occurred while decompressing the request body using Brotli:\n{e}\n\
+                                    Sending 406 status to the client...", line!());
+
+                        return Err(ServerError::DecompressionError(e));
+                    }
+                } else {
+                    return Err(ServerError::UnsupportedEncoding);
+                }
+            }
+            (Some(content_encoding), Some(supported_encodings))
+            if !supported_encodings.contains(content_encoding) => {
+                return Err(ServerError::UnsupportedEncoding);
+            },
+            (Some(_), None) => {
+                return Err(ServerError::UnsupportedEncoding);
+            },
+            _ => {
+                payload = buffer.to_vec();
+            }
+        }
+
+        let body: RequestBody;
+
+        match headers.get("content-type") {
+            Some(content_type) if content_type.eq("application/octet-stream") => {
+                body = OctetStream(payload.clone());
+                *cgi_data = Some(CGIData {data: payload, content_type: content_type.clone()});
+            },
+            Some(content_type) if content_type.starts_with("application/x-www-form-urlencoded") => {
+                let x_www_urlencoded_raw = String::from(String::from_utf8_lossy(&payload));
+                let mut body_hm: HashMap<String, String> = HashMap::new();
+                for kv in x_www_urlencoded_raw.split('&') {
+                    let Some(kv_split) = kv.split_once('=') else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    let (Ok(name_decoded), Ok(value_decoded)) = (urlencoding::decode(kv_split.0), urlencoding::decode(kv_split.1)) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    if let Some(_) = &body_hm.insert(name_decoded.into_owned(), value_decoded.into_owned()) {
+                        return Err(ServerError::MalformedPayload);
+                    }
+                }
+                body = XWWWFormUrlEncoded(body_hm);
+                *cgi_data = Some(CGIData {data: payload, content_type: content_type.clone()});
+            },
+            Some(content_type) if content_type.starts_with("text/plain") => {
+                let plain_raw = String::from(String::from_utf8_lossy(&payload));
+                body = Plain(plain_raw);
+                *cgi_data = Some(CGIData {data: payload, content_type: content_type.clone()});
+            },
+            Some(content_type) => {
+                *cgi_data = Some(CGIData {data: payload.clone(), content_type: content_type.clone()});
+
+                let Some((content_type, boundary_raw)) = content_type.split_once(';') else {
+                    return Err(ServerError::MalformedPayload);
+                };
+
+                if !content_type.trim_end().eq("multipart/form-data") {
+                    return Ok(request);
+                }
+
+                let Some((_, bound)) = boundary_raw.trim_end_matches(';').split_once('=') else {
+                    return Err(ServerError::MalformedPayload);
+                };
+                let bound = bound.trim_matches(|y| y == '"');
+
+                let mut body_hm: HashMap<String, FormDataValue> = HashMap::new();
+
+                for field in payload.split_str(&*format!("--{bound}")).skip(1) {
+                    if field.trim_ascii().eq(&[45, 45]) {
+                        break;
+                    }
+
+                    let mut field_lines = field.split_str("\r\n").skip(1);
+                    let mut headers: HashMap<String, String> = HashMap::new();
+
+                    let Some(mut header_bytes) = field_lines.next() else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    while HEADERS_REGEX.is_match(header_bytes) {
+                        if let Some(h) = field_lines.next() {
+                            let Some((header_name, header_value)) = header_bytes.split_once_str(":") else {
+                                return Err(ServerError::MalformedPayload);
+                            };
+
+                            headers.insert(String::from_utf8_lossy(header_name.trim_ascii()).to_lowercase(), String::from_utf8_lossy(header_value.trim_ascii()).to_string());
+                            header_bytes = h;
+                            continue;
+                        }
+                        return Err(ServerError::MalformedPayload);
+                    }
+
+                    let (Some(content_disp), Some(field_data)) = (headers.get("content-disposition"), field_lines.next()) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    let mut content_disp_split = content_disp.split(";");
+                    let (Some(form_data), Some(name)) = (content_disp_split.next(), content_disp_split.next()) else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    if !form_data.trim_start().eq("form-data") || !header_bytes.trim_ascii().is_empty() {
+                        return Err(ServerError::MalformedPayload);
+                    }
+
+                    let Some((_, name)) = name.split_once("=") else {
+                        return Err(ServerError::MalformedPayload);
+                    };
+
+                    body_hm.insert(String::from(name.trim_matches('"')), FormDataValue {
+                        filename: if let Some(filename) = content_disp_split.next() {
+                            let Some((_, filename)) = filename.split_once("=") else {
+                                return Err(ServerError::MalformedPayload);
+                            };
+
+                            Some(String::from(filename.trim_matches('"')))
+                        } else {
+                            None
+                        },
+                        headers,
+                        value: Vec::from(field_data)
+                    });
+                }
+                body = FormData(body_hm);
+            },
+            _ => {
+                return Err(ServerError::UnsupportedMediaType);
+            }
+        }
+
+        *data = Some(body);
+    }
+    #[cfg(not(feature = "cgi"))]
     if let  Request::Post {data, headers, ..} |
-            Request::Put {data, headers, ..} |
-            Request::Patch {data, headers, ..} |
-            Request::Delete {data, headers, .. } = &mut request {
+    Request::Put {data, headers, ..} |
+    Request::Patch {data, headers, ..} |
+    Request::Delete {data, headers, ..} = &mut request {
         let mut buffer = BytesMut::with_capacity(
             match headers.get("content-length").unwrap_or(&String::from("0")).parse::<usize>() {
                 Ok(l) if l > 0 => {
@@ -580,6 +767,7 @@ pub async fn endpoint<'a, T>(endpoint: &str,
                              response_headers: &mut HashMap<String, String>,
                              set_cookie: &mut HashMap<String, SetCookie>,
                              status: &mut u16,
+                             local_ip: &IpAddr,
                              remote_ip: &IpAddr,
                              remote_port: &u16,
                              library: &Library) -> Result<Option<Vec<u8>>, LibError>
@@ -590,7 +778,7 @@ where
             let endpoint_symbol = String::from(endpoint).replace(|x| x == '/' || x == '\\', "::");
             let e = library.get::<Endpoint>(endpoint_symbol.as_bytes())?;
 
-            e(request_data, &request_headers, response_headers, set_cookie, status, remote_ip, remote_port)
+            e(request_data, &request_headers, response_headers, set_cookie, status, &CONFIG.bind_host, local_ip, &CONFIG.bind_port, remote_ip, remote_port)
     } {
         Ok(content) => Ok(content),
         Err(e) => {

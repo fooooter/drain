@@ -218,6 +218,16 @@ async fn main() -> io::Result<()> {
 
     let bind_host = &CONFIG.bind_host;
 
+    #[cfg(feature = "cgi")]
+    match &CONFIG.cgi {
+        Some(cgi) if cgi.enabled => {
+            println!("CGI enabled. Scripts will be executed using {}", cgi.cgi_server);
+        },
+        _ => {
+            println!("CGI disabled.");
+        }
+    }
+
     if CONFIG.be_verbose {
         match &CONFIG.encoding {
             Some(encoding) => {
@@ -225,16 +235,6 @@ async fn main() -> io::Result<()> {
             },
             _ => {
                 println!("Encoding disabled.");
-            }
-        }
-
-        #[cfg(feature = "cgi")]
-        match &CONFIG.cgi {
-            Some(cgi) if cgi.enabled => {
-                println!("CGI enabled. Scripts will be executed using {}", cgi.cgi_server);
-            },
-            _ => {
-                println!("CGI disabled.");
             }
         }
 

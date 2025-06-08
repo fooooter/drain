@@ -161,6 +161,7 @@ where
 
         cgi_process = cgi_command
             .envs(&envs)
+            .arg(&script_filename)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -174,6 +175,7 @@ where
     } else {
         cgi_process = cgi_command
             .envs(&envs)
+            .arg(&script_filename)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

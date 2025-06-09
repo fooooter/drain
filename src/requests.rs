@@ -21,6 +21,7 @@ use tokio::sync::Semaphore;
 use crate::util::ResourceType::{Dynamic, Static};
 #[cfg(feature = "cgi")]
 use crate::cgi::CGIData;
+use crate::endpoints::{endpoint, ENDPOINT_LIBRARY};
 
 pub enum Request {
     Get {
@@ -233,6 +234,9 @@ pub async fn handle_get<T>(stream: &mut T,
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    #[cfg(target_family = "unix")]
+    let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+    #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
     resource.remove(0);
 
@@ -468,6 +472,9 @@ pub async fn handle_head<T>(stream: &mut T,
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    #[cfg(target_family = "unix")]
+    let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+    #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
     resource.remove(0);
 
@@ -582,6 +589,9 @@ pub async fn handle_post<'a, T>(stream: &mut T,
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    #[cfg(target_family = "unix")]
+    let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+    #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
     resource.remove(0);
 

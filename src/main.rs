@@ -5,14 +5,18 @@ mod config;
 mod error;
 #[cfg(feature = "cgi")]
 mod cgi;
+mod ssl;
+mod endpoints;
 
 use std::collections::HashMap;
 use std::env;
+use std::env::set_current_dir;
 use std::error::Error;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::time::Duration;
+use openssl::ssl::Ssl;
 use tokio::net::*;
 use tokio::*;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -26,10 +30,12 @@ use crate::config::CONFIG;
 use crate::cgi::handle_cgi;
 #[cfg(feature = "cgi")]
 use crate::cgi::CGIStatus;
+use crate::endpoints::ENDPOINT_LIBRARY;
 use crate::error::ServerError;
 #[cfg(feature = "cgi")]
 use crate::pages::bad_gateway::bad_gateway;
 use crate::pages::internal_server_error::internal_server_error;
+use crate::ssl::SSL;
 use crate::util::ResourceType::Dynamic;
 
 async fn handle_connection<T>(
@@ -247,109 +253,117 @@ async fn main() -> io::Result<()> {
     }
 
     LazyLock::force(&ENDPOINT_LIBRARY);
+    LazyLock::force(&SSL);
 
-    match &CONFIG.https {
-        Some(https) if https.enabled => {
-            println!("SSL enabled.");
-            let bind_port = &https.bind_port;
+    #[cfg(target_family = "unix")]
+    if *&*CHROOT {
+        if let Err(e) = set_current_dir("/") {
+            eprintln!("[main():{}] An error occurred while setting the current working directory.\n\
+                                   Cannot continue any further, as it poses a threat to the data security.\n\
+                                   Error information:\n", line!());
+            return Err(e);
+        }
+    }
+
+    match &*SSL {
+        Some(ssl_info) => {
+            let bind_port = ssl_info.port;
             let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
             println!("Listening on {}:{}", bind_host, bind_port);
             loop {
-                let ssl = https.configure_ssl();
-                match ssl {
-                    Ok(ssl) => {
-                        let (stream, _) = listener.accept().await?;
-                        let local_addr = match stream.local_addr() {
-                            Ok(addr) => addr,
-                            Err(e1) => {
-                                eprintln!("[main():{}] An error occurred while getting the server's address.\n\
-                                                       Error information:\n{e1}", line!());
-
-                                continue;
-                            }
-                        };
-                        let remote_addr = match stream.peer_addr() {
-                            Ok(addr) => addr,
-                            Err(e1) => {
-                                eprintln!("[main():{}] An error occurred while getting the client's address.\n\
-                                                       Error information:\n{e1}", line!());
-
-                                continue;
-                            }
-                        };
-
-                        let local_ip = local_addr.ip();
-                        let remote_ip = remote_addr.ip();
-                        let remote_port = remote_addr.port();
-
-                        let mut stream = SslStream::new(ssl, stream)?;
-                        if let Err(e1) = Pin::new(&mut stream).accept().await {
-                            if let Some(ssl_error) = e1.ssl_error() {
-                                if ssl_error.to_string().contains("http request") {
-                                    continue;
-                                }
-                            }
-
-                            eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
-                                                   Error information:\n{e1}\n\
-                                                   Continuing with the regular HTTP...", line!());
-
-                            break;
-                        }
-
-                        spawn(async move {
-                            let mut keep_alive = true;
-                            let mut buf: [u8; 1] = [0; 1];
-                            loop {
-                                if !keep_alive {
-                                    break;
-                                }
-
-                                match timeout(Duration::from_secs((&CONFIG).request_timeout), Pin::new(&mut stream).peek(&mut buf)).await {
-                                    Ok(Ok(0)) | Err(_) => break,
-                                    Ok(Err(e)) => {
-                                        if e.to_string().eq("the SSL session has been shut down") {
-                                            break;
-                                        }
-
-                                        eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
-                                        break;
-                                    },
-                                    _ => {}
-                                }
-
-                                #[cfg(feature = "cgi")]
-                                let https_enabled = true;
-
-                                if let Err(e) = handle_connection(
-                                    &mut stream,
-                                    &mut keep_alive,
-                                    &local_ip,
-                                    &remote_ip,
-                                    &remote_port,
-                                    #[cfg(feature = "cgi")]
-                                    https_enabled
-                                ).await {
-                                    eprintln!("[main():{}] An error occurred while handling connection:\
-                                    \n{e}\n", line!());
-                                }
-                            }
-                        });
-                    },
+                let ssl = match Ssl::new(&ssl_info.ctx) {
+                    Ok(ssl) => ssl,
                     Err(e) => {
-                        eprintln!("[main():{}] An error occurred while configuring SSL for a secure connection.\n\
+                        eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
                                                Error information:\n{e}\n\
-                                               Continuing with the regular HTTP.", line!());
+                                               Continuing with the regular HTTP...", line!());
 
                         break;
                     }
+                };
+
+                let (stream, _) = listener.accept().await?;
+                let local_addr = match stream.local_addr() {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        eprintln!("[main():{}] An error occurred while getting the server's address.\n\
+                                               Error information:\n{e}", line!());
+
+                        continue;
+                    }
+                };
+                let remote_addr = match stream.peer_addr() {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        eprintln!("[main():{}] An error occurred while getting the client's address.\n\
+                                               Error information:\n{e}", line!());
+
+                        continue;
+                    }
+                };
+
+                let local_ip = local_addr.ip();
+                let remote_ip = remote_addr.ip();
+                let remote_port = remote_addr.port();
+
+                let mut stream = SslStream::new(ssl, stream)?;
+                if let Err(e) = Pin::new(&mut stream).accept().await {
+                    if let Some(ssl_error) = e.ssl_error() {
+                        if ssl_error.to_string().contains("http request") {
+                            continue;
+                        }
+                    }
+
+                    eprintln!("[main():{}] An error occurred while establishing a secure connection.\n\
+                                           Error information:\n{e}\n\
+                                           Continuing with the regular HTTP...", line!());
+
+                    break;
                 }
+
+                spawn(async move {
+                    let mut keep_alive = true;
+                    let mut buf: [u8; 1] = [0; 1];
+                    loop {
+                        if !keep_alive {
+                            break;
+                        }
+
+                        match timeout(Duration::from_secs((&CONFIG).request_timeout), Pin::new(&mut stream).peek(&mut buf)).await {
+                            Ok(Ok(0)) | Err(_) => break,
+                            Ok(Err(e)) => {
+                                if e.to_string().eq("the SSL session has been shut down") {
+                                    break;
+                                }
+
+                                eprintln!("[main():{}] An error occurred while handling connection:\n{e}\n", line!());
+                                break;
+                            },
+                            _ => {}
+                        }
+
+                        #[cfg(feature = "cgi")]
+                        let https_enabled = true;
+
+                        if let Err(e) = handle_connection(
+                            &mut stream,
+                            &mut keep_alive,
+                            &local_ip,
+                            &remote_ip,
+                            &remote_port,
+                            #[cfg(feature = "cgi")]
+                            https_enabled
+                        ).await {
+                            eprintln!("[main():{}] An error occurred while handling connection:\
+                            \n{e}\n", line!());
+                        }
+                    }
+                });
             }
         },
         _ => {}
     }
 
-    println!("SSL disabled.");
     let bind_port = &CONFIG.bind_port;
     let listener = TcpListener::bind(format!("{}:{}", bind_host, bind_port)).await?;
     println!("Listening on {}:{}", bind_host, bind_port);
@@ -357,18 +371,18 @@ async fn main() -> io::Result<()> {
         let (mut stream, _) = listener.accept().await?;
         let local_addr = match stream.local_addr() {
             Ok(addr) => addr,
-            Err(e1) => {
+            Err(e) => {
                 eprintln!("[main():{}] An error occurred while getting the server's address.\n\
-                                       Error information:\n{e1}", line!());
+                                       Error information:\n{e}", line!());
 
                 continue;
             }
         };
         let remote_addr = match stream.peer_addr() {
             Ok(addr) => addr,
-            Err(e1) => {
+            Err(e) => {
                 eprintln!("[main():{}] An error occurred while getting the client's address.\n\
-                                       Error information:\n{e1}", line!());
+                                       Error information:\n{e}", line!());
 
                 continue;
             }

@@ -3,12 +3,13 @@ use std::env;
 use std::sync::LazyLock;
 use glob::glob;
 use openssl::error::ErrorStack;
-use openssl::ssl::{select_next_proto, AlpnError, Ssl, SslContext, SslFiletype, SslMethod, SslVerifyMode, SslVersion};
+use openssl::ssl::{select_next_proto, AlpnError, SslContext, SslFiletype, SslMethod, SslOptions, SslSessionCacheMode, SslVerifyMode, SslVersion};
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Handle;
 use tokio::task;
+use crate::util::CHROOT;
 
 #[derive(Deserialize)]
 pub struct AccessControl {
@@ -57,6 +58,9 @@ pub struct Config {
     pub document_root: String,
     pub server_root: String,
     pub https: Option<Https>,
+    #[cfg(target_family = "unix")]
+    #[serde(default)]
+    pub chroot: bool,
     #[serde(default)]
     pub enable_trace: bool,
     #[serde(default = "Config::default_server_header_state")]
@@ -219,10 +223,15 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 
 impl AccessControl {
     pub fn is_access_allowed(&self, resource: &String) -> bool {
+        #[cfg(target_family = "unix")]
+        let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+        #[cfg(not(target_family = "unix"))]
+        let document_root = &CONFIG.document_root;
+
         for (k, v) in &self.list {
-            if let Ok(paths) = glob(&*format!("{}/{k}", &CONFIG.document_root)) {
+            if let Ok(paths) = glob(&*format!("{document_root}/{k}")) {
                 for entry in paths.filter_map(Result::ok) {
-                    if entry.to_string_lossy().eq(&*format!("{}/{resource}", &CONFIG.document_root)) {
+                    if entry.to_string_lossy().eq(&*format!("{document_root}/{resource}")) {
                         if v.eq("deny") {
                             return false;
                         }
@@ -235,7 +244,7 @@ impl AccessControl {
 }
 
 impl Https {
-    pub fn configure_ssl(&self) -> Result<Ssl, ErrorStack> {
+    pub fn configure_ssl(&self) -> Result<SslContext, ErrorStack> {
         let server_root = &CONFIG.server_root;
         let mut ssl_ctx_builder = SslContext::builder(SslMethod::tls())?;
 
@@ -274,18 +283,25 @@ impl Https {
             }
         });
 
-        let ssl_ctx = ssl_ctx_builder.build();
-        Ssl::new(&ssl_ctx)
+        ssl_ctx_builder.set_options(SslOptions::NO_TICKET);
+        ssl_ctx_builder.set_session_cache_mode(SslSessionCacheMode::OFF);
+
+        Ok(ssl_ctx_builder.build())
     }
 }
 
 #[cfg(feature = "cgi")]
 impl CGI {
     pub fn should_attempt_cgi(&self, resource: &String) -> bool {
+        #[cfg(target_family = "unix")]
+        let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+        #[cfg(not(target_family = "unix"))]
+        let document_root = &CONFIG.document_root;
+
         for (k, v) in &self.cgi_rules {
-            if let Ok(paths) = glob(&*format!("{}/{k}", &CONFIG.document_root)) {
+            if let Ok(paths) = glob(&*format!("{document_root}/{k}")) {
                 for entry in paths.filter_map(Result::ok) {
-                    if entry.to_string_lossy().eq(&*format!("{}/{resource}", &CONFIG.document_root)) {
+                    if entry.to_string_lossy().eq(&*format!("{document_root}/{resource}")) {
                         return *v;
                     }
                 }

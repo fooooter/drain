@@ -41,6 +41,7 @@
     "ssl_private_key_file": "key.pem",
     "ssl_certificate_file": "cert.pem"
   },
+  "chroot": false,
   "enable_trace": false,
   "enable_server_header": true,
   "request_timeout": 10,

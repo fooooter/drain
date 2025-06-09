@@ -4,12 +4,15 @@ use std::fs::read_dir;
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::config::CONFIG;
 use crate::util::ResourceType::Dynamic;
-use crate::util::send_response;
+use crate::util::{send_response, CHROOT};
 
 pub async fn index_of<T>(mut stream: &mut T, directory: String, head: bool, headers: &HashMap<String, String>) -> Result<(), Box<dyn Error>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
+    #[cfg(target_family = "unix")]
+    let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+    #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
 
     let mut directory_list = String::new();

@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.4.1-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.4.5-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -101,6 +101,7 @@ Currently available fields are:
   A path to it must be relative to the `server_root`.
   * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled). 
   The certificate must match the private key and a path to it must be relative to the `server_root`.
+- `chroot` - whether to enable the chroot jail or not. False by default and available only in UNIX-like operating systems.
 - `enable_trace` - whether to enable TRACE HTTP method or not. TRACE method is considered not very safe, so it's false by default 
   (when false, the server returns 405 status).
 - `enable_server_header` - whether to enable the `Server` header or not. It contains "Drain " + its current version. True by default.
@@ -124,6 +125,16 @@ as it would be dangerous for the server to arbitrarily guess, what they should d
 Therefore, they can be handled explicitly only inside the dynamic endpoint.
 
 ## Usage
+
+### Chroot jail (UNIX-like OSes only)
+
+Chroot jail functionality makes the whole operation of the server way more secure by setting the root directory
+to the document root specified in config.json; but be wary, though, that files from outside the new root won't be 
+accessible unless the directories containing them are mounted with the `--bind` flag into the document root. 
+
+If you decide to mount anything, that shouldn't be sent by the server in response, please ensure that access to it is disabled with `access_control` in config.json.
+
+Don't worry about SSL keys and endpoint library - they're loaded before the chroot.
 
 ### Template
 

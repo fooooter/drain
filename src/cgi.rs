@@ -11,9 +11,10 @@ use mime_guess::Mime;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use crate::config::CONFIG;
+use crate::endpoints::{endpoint, ENDPOINT_LIBRARY};
 use crate::error::ServerError;
 use crate::util::ResourceType::Dynamic;
-use crate::util::{endpoint, send_response, ENDPOINT_LIBRARY};
+use crate::util::{send_response, CHROOT};
 
 pub struct CGIData {
     pub data: Vec<u8>,
@@ -98,6 +99,9 @@ where
     let server_port = CONFIG.bind_port.to_string();
     let server_protocol = String::from("HTTP/1.1");
     let server_software = format!("Drain {}", env!("CARGO_PKG_VERSION"));
+    #[cfg(target_family = "unix")]
+    let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+    #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
     let content_length: String;
     let request_uri = resource;

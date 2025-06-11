@@ -232,7 +232,14 @@ impl AccessControl {
         for (k, v) in &self.list {
             if let Ok(paths) = glob(&*format!("{document_root}/{k}")) {
                 for entry in paths.filter_map(Result::ok) {
+                    #[cfg(target_family = "unix")]
                     if entry.to_string_lossy().eq(&*format!("{document_root}/{resource}")) {
+                        if v.eq("deny") {
+                            return false;
+                        }
+                    }
+                    #[cfg(not(target_family = "unix"))]
+                    if entry.to_string_lossy().eq(&*format!("{document_root}\\{resource}")) {
                         if v.eq("deny") {
                             return false;
                         }

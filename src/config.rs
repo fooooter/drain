@@ -302,7 +302,12 @@ impl CGI {
         for (k, v) in &self.cgi_rules {
             if let Ok(paths) = glob(&*format!("{document_root}/{k}")) {
                 for entry in paths.filter_map(Result::ok) {
+                    #[cfg(target_family = "unix")]
                     if entry.to_string_lossy().eq(&*format!("{document_root}/{resource}")) {
+                        return *v;
+                    }
+                    #[cfg(not(target_family = "unix"))]
+                    if entry.to_string_lossy().eq(&*format!("{document_root}\\{resource}")) {
                         return *v;
                     }
                 }

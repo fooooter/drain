@@ -14,7 +14,9 @@ use crate::config::CONFIG;
 use crate::endpoints::{endpoint, ENDPOINT_LIBRARY};
 use crate::error::ServerError;
 use crate::util::ResourceType::Dynamic;
-use crate::util::{send_response, CHROOT};
+use crate::util::send_response;
+#[cfg(target_family = "unix")]
+use crate::util::CHROOT;
 
 pub struct CGIData {
     pub data: Vec<u8>,

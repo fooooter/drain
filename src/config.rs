@@ -9,6 +9,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Handle;
 use tokio::task;
+#[cfg(target_family = "unix")]
 use crate::util::CHROOT;
 
 #[derive(Deserialize)]

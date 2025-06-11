@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::Read;
+#[cfg(target_family = "unix")]
 use std::os::unix::fs::chroot;
 use std::sync::LazyLock;
 use chrono::Utc;

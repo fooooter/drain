@@ -4,7 +4,9 @@ use std::fs::read_dir;
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::config::CONFIG;
 use crate::util::ResourceType::Dynamic;
-use crate::util::{send_response, CHROOT};
+use crate::util::send_response;
+#[cfg(target_family = "unix")]
+use crate::util::CHROOT;
 
 pub async fn index_of<T>(mut stream: &mut T, directory: String, head: bool, headers: &HashMap<String, String>) -> Result<(), Box<dyn Error>>
 where

@@ -10,6 +10,7 @@ mod endpoints;
 
 use std::collections::HashMap;
 use std::env;
+#[cfg(target_family = "unix")]
 use std::env::set_current_dir;
 use std::error::Error;
 use std::net::IpAddr;

@@ -5,10 +5,8 @@ use glob::glob;
 use openssl::error::ErrorStack;
 use openssl::ssl::{select_next_proto, AlpnError, SslContext, SslFiletype, SslMethod, SslOptions, SslSessionCacheMode, SslVerifyMode, SslVersion};
 use serde::Deserialize;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-use tokio::runtime::Handle;
-use tokio::task;
+use std::fs::File;
+use std::io::Read;
 #[cfg(target_family = "unix")]
 use crate::util::CHROOT;
 
@@ -75,19 +73,18 @@ pub struct Config {
 }
 
 impl Config {
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let config_path = env::var("DRAIN_CONFIG");
         let config_file;
 
         match &config_path {
             Ok(c_f) => {
-                config_file = File::open(c_f).await;
+                config_file = File::open(c_f);
                 println!("Config path: {c_f}");
             }
             Err(e) => {
                 eprintln!("[Config::new():{}] A critical server config file wasn't found.\n\
-                            Error information:\n\
-                            {}", line!(), *e);
+                                              Error information:\n{}", line!(), e);
                 panic!("Unrecoverable error occurred while trying to set up connection.");
             }
         }
@@ -95,7 +92,7 @@ impl Config {
         let mut json: Vec<u8> = Vec::new();
         match config_file {
             Ok(mut f) => {
-                if let Err(e) = f.read_to_end(&mut json).await {
+                if let Err(e) = f.read_to_end(&mut json) {
                     eprintln!("[Config::new():{}] An error occurred after an attempt to read from a file: {:?}.\n\
                                Error information:\n\
                                {e}\n", line!(), f);
@@ -215,11 +212,7 @@ impl Config {
 }
 
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
-    task::block_in_place(move || {
-        Handle::current().block_on(async move {
-            Config::new().await
-        })
-    })
+    Config::new()
 });
 
 impl AccessControl {

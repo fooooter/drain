@@ -56,6 +56,7 @@ pub struct Config {
     pub encoding: Option<Encoding>,
     pub document_root: String,
     pub server_root: String,
+    index_page_rules: Option<HashMap<String, bool>>,
     pub https: Option<Https>,
     #[cfg(target_family = "unix")]
     #[serde(default)]
@@ -208,7 +209,30 @@ impl Config {
         None
     }
 
+    pub fn should_display_index_of(&self, resource: &String) -> bool {
+        #[cfg(target_family = "unix")]
+        let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
+        #[cfg(not(target_family = "unix"))]
+        let document_root = &CONFIG.document_root;
 
+        if let Some(index_of_rules) = &self.index_page_rules {
+            for (k, v) in index_of_rules {
+                if let Ok(paths) = glob(&*format!("{document_root}/{k}")) {
+                    for entry in paths.filter_map(Result::ok) {
+                        #[cfg(target_family = "unix")]
+                        if entry.to_string_lossy().eq(&*format!("{document_root}/{resource}")) {
+                            return *v;
+                        }
+                        #[cfg(not(target_family = "unix"))]
+                        if entry.to_string_lossy().eq(&*format!("{document_root}\\{resource}")) {
+                            return *v;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {

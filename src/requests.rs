@@ -283,24 +283,15 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let _ = FILE_HANDLE_LIMIT.acquire().await?;
-        let res_tmp = match File::open(format!("{document_root}/{resource}/index.html")).await {
-            Ok(_) => {
-                format!("{resource}/index.html")
-            },
-            _ => {
-                format!("{resource}/index")
-            }
+        let res_tmp = if Path::new(&format!("{document_root}/{resource}/index.html")).is_file() {
+            format!("{resource}/index.html")
+        } else {
+            format!("{resource}/index")
         };
-
-        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(stream, resource, false, headers).await;
-        }
 
         let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
 
-        let _ = FILE_HANDLE_LIMIT.acquire().await?;
-        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+        if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
             match &CONFIG.endpoints {
                 Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
                 _ => {
@@ -488,24 +479,15 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let _ = FILE_HANDLE_LIMIT.acquire().await?;
-        let res_tmp = match File::open(format!("{document_root}/{resource}/index.html")).await {
-            Ok(_) => {
-                format!("{resource}/index.html")
-            },
-            _ => {
-                format!("{resource}/index")
-            }
+        let res_tmp = if Path::new(&format!("{document_root}/{resource}/index.html")).is_file() {
+            format!("{resource}/index.html")
+        } else {
+            format!("{resource}/index")
         };
-
-        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(stream, resource, true, headers).await;
-        }
 
         let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
 
-        let _ = FILE_HANDLE_LIMIT.acquire().await?;
-        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+        if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
             match &CONFIG.endpoints {
                 Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
                 _ => {
@@ -638,24 +620,15 @@ where
     }
 
     if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let _ = FILE_HANDLE_LIMIT.acquire().await?;
-        let res_tmp = match File::open(format!("{document_root}/{resource}/index.html")).await {
-            Ok(_) => {
-                format!("{resource}/index.html")
-            },
-            _ => {
-                format!("{resource}/index")
-            }
+        let res_tmp = if Path::new(&format!("{document_root}/{resource}/index.html")).is_file() {
+            format!("{resource}/index.html")
+        } else {
+            format!("{resource}/index")
         };
-
-        if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
-            return index_of(stream, resource, false, headers).await;
-        }
 
         let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
 
-        let _ = FILE_HANDLE_LIMIT.acquire().await?;
-        if let Err(_) = File::open(format!("{document_root}/{res_tmp}")).await {
+        if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
             match &CONFIG.endpoints {
                 Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
                 _ => {

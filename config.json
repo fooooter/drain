@@ -33,6 +33,10 @@
   },
   "document_root": "/www",
   "server_root": "/usr/local/etc/drain",
+  "index_page_rules": {
+    "/": true,
+    "/**": true
+  },
   "https": {
     "enabled": true,
     "bind_port": 443,

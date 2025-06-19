@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.4.6-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.5.0-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -74,6 +74,10 @@ Currently available fields are:
   * `encoding_applicable_mime_types` - a list of media types to which encoding should be applied. It's best to leave this setting as is.
 - `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
 - `server_root` - a directory in which server data are kept, like, for example, key-pairs for SSL.
+- `index_page_rules` - here you can control, for which directories the "index of" page will be displayed when no index file is found, and for which won't through a list of key-value pairs.
+  In order to have the server send "index of" page, when the directory matches the given pattern, set `true` (default action is `false`).
+  It uses Glob UNIX shell-like path syntax, so you can match directories recursively!
+  Directories are relative to `document_root`.
 - `https`:
   * `enabled` - enable HTTPS.
   * `bind_port` - bind port to the server (HTTPS). If you want to use 443, be sure to start the server as root or another privileged user.

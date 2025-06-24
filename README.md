@@ -1,4 +1,4 @@
-[![crates.io](https://img.shields.io/badge/crates.io-v1.5.0-darkblue)](https://crates.io/crates/drain_server)
+[![crates.io](https://img.shields.io/badge/crates.io-v1.5.2-darkblue)](https://crates.io/crates/drain_server)
 
 ## Progress done so far (and TODO in the future)
 [✔]   	GET<br>
@@ -73,11 +73,13 @@ Currently available fields are:
   * `supported_encodings` - a list of all compression algorithms supported by the server. It can currently contain only "gzip" and "br".
   * `encoding_applicable_mime_types` - a list of media types to which encoding should be applied. It's best to leave this setting as is.
 - `document_root` - a directory in which documents/files returned to the client are stored. Makes for the root of a URL.
-- `server_root` - a directory in which server data are kept, like, for example, key-pairs for SSL.
-- `index_page_rules` - here you can control, for which directories the "index of" page will be displayed when no index file is found, and for which won't through a list of key-value pairs.
+- `server_root` - a directory in which server data are kept, like, for example, dynamic endpoint libraries.
+- `index_of_page_rules` - here you can control, for which directories the "index of" page will be displayed when no index file is found, and for which won't through a list of key-value pairs.
   In order to have the server send "index of" page, when the directory matches the given pattern, set `true` (default action is `false`).
   It uses Glob UNIX shell-like path syntax, so you can match directories recursively!
   Directories are relative to `document_root`.
+- `indices` - a list containing all index files, that the server will pick when the resource given by the client is a directory. Files are picked with respect to their order
+  in this field.
 - `https`:
   * `enabled` - enable HTTPS.
   * `bind_port` - bind port to the server (HTTPS). If you want to use 443, be sure to start the server as root or another privileged user.
@@ -101,10 +103,8 @@ Currently available fields are:
     + TLS_SHA256_SHA256 - integrity-only
   
     Instead, the default configuration will be used: `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256`
-  * `ssl_private_key_file` - a path to the private key file in PEM format (a necessary field once HTTPS is enabled). 
-  A path to it must be relative to the `server_root`.
-  * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled). 
-  The certificate must match the private key and a path to it must be relative to the `server_root`.
+  * `ssl_private_key_file` - a path to the private key file in PEM format (a necessary field once HTTPS is enabled).
+  * `ssl_certificate_file` - a path to the certificate file in PEM format (a necessary field once HTTPS is enabled).
 - `chroot` - whether to enable the chroot jail or not. False by default and available only in UNIX-like operating systems.
 - `enable_trace` - whether to enable TRACE HTTP method or not. TRACE method is considered not very safe, so it's false by default 
   (when false, the server returns 405 status).
@@ -210,13 +210,16 @@ pub enum RequestData<'a> {
     Head(&'a Option<HashMap<String, String>>),
     Put {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>},
     Delete {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>},
-    Patch {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>}
+    Patch {params: &'a Option<HashMap<String, String>>, data: &'a Option<RequestBody>},
+    Default
 }
 ```
 
 POST, PUT, DELETE and PATCH `data` consists of a `RequestBody` enum, which contains data of a given media type. Currently supported request MIME types
 are `application/x-www-form-urlencoded`, `multipart/form-data`, `plain/text` and `application/octet-stream` represented by 
 `XWWWFormUrlEncoded`, `FormData`, `Plain` and `OctetStream` `RequestBody` enum variants respectively.
+
+`Default` type is meant to be used primarily for handling `not_found` and `forbidden` pages when invoked outside of the regular request handlers, for example, during CGI.
 
 `FormDataValue` is a struct containing possible filename of the data segment, its headers and its value. Keep in mind, that `value` is a `Vec<u8>`, because it can contain binary data, unlike
 in `XWWWFormUrlEncoded`, where binary data are encoded using URL encoding.

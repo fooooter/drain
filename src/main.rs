@@ -17,6 +17,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::time::Duration;
+use drain_common::RequestData;
 #[cfg(target_family = "unix")]
 use fork::{fork, Fork};
 use openssl::ssl::Ssl;
@@ -38,6 +39,7 @@ use crate::error::ServerError;
 #[cfg(feature = "cgi")]
 use crate::pages::bad_gateway::bad_gateway;
 use crate::pages::internal_server_error::internal_server_error;
+use crate::pages::not_found::not_found;
 use crate::ssl::{SslInfo, SSL};
 use crate::util::ResourceType::Dynamic;
 
@@ -48,7 +50,7 @@ async fn handle_connection<T>(
     remote_ip: &IpAddr,
     remote_port: &u16,
     #[cfg(feature = "cgi")]
-    https: bool) -> Result<(), Box<dyn Error>>
+    https: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -57,84 +59,150 @@ where
             #[cfg(feature = "cgi")]
             match request {
                 Get {resource, params, query_string, headers} => {
+                    let mut resource_present_in_endpoints = false;
                     match &CONFIG.cgi {
-                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches('/'))) => {
                             match handle_cgi(stream, &headers, &resource, "GET", query_string, None, local_ip, remote_ip, remote_port, https).await {
-                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) | Ok(CGIStatus::IndexOf) => return Ok(()),
+                                Ok(CGIStatus::Unavailable { not_found_guaranteed: true, resource_present_in_endpoints: false }) => {
+                                    let response_headers: HashMap<String, String> = HashMap::new();
+                                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                                        return not_found(stream, RequestData::Default, &headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                                    }
+                                    return send_response(stream, 404, Some(response_headers), None, None, None).await
+                                },
+                                Ok(CGIStatus::Unavailable { resource_present_in_endpoints: true, .. }) => {
+                                    resource_present_in_endpoints = true;
+                                },
                                 Err(_) => return bad_gateway(stream).await,
                                 _ => {}
                             }
                         },
                         _ => {}
                     }
-                    handle_get(stream, &headers, resource, &params, local_ip, remote_ip, remote_port).await
+                    handle_get(stream, &headers, resource, &params, local_ip, remote_ip, remote_port, resource_present_in_endpoints).await
                 },
                 Head {resource, params, query_string, headers} => {
+                    let mut resource_present_in_endpoints = false;
                     match &CONFIG.cgi {
-                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches('/'))) => {
                             match handle_cgi(stream, &headers, &resource, "HEAD", query_string, None, local_ip, remote_ip, remote_port, https).await {
-                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) | Ok(CGIStatus::IndexOf) => return Ok(()),
+                                Ok(CGIStatus::Unavailable { not_found_guaranteed: true, resource_present_in_endpoints: false }) => {
+                                    let response_headers: HashMap<String, String> = HashMap::new();
+                                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                                        return not_found(stream, RequestData::Default, &headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                                    }
+                                    return send_response(stream, 404, Some(response_headers), None, None, None).await
+                                },
+                                Ok(CGIStatus::Unavailable { resource_present_in_endpoints: true, .. }) => {
+                                    resource_present_in_endpoints = true;
+                                },
                                 Err(_) => return bad_gateway(stream).await,
                                 _ => {}
                             }
                         },
                         _ => {}
                     }
-                    handle_head(stream, &headers, resource, &params, local_ip, remote_ip, remote_port).await
+                    handle_head(stream, &headers, resource, &params, local_ip, remote_ip, remote_port, resource_present_in_endpoints).await
                 },
                 Post {resource, params, query_string, headers, data, cgi_data} => {
+                    let mut resource_present_in_endpoints = false;
                     match &CONFIG.cgi {
-                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches('/'))) => {
                             match handle_cgi(stream, &headers, &resource, "POST", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
-                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) | Ok(CGIStatus::IndexOf) => return Ok(()),
+                                Ok(CGIStatus::Unavailable { not_found_guaranteed: true, resource_present_in_endpoints: false }) => {
+                                    let response_headers: HashMap<String, String> = HashMap::new();
+                                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                                        return not_found(stream, RequestData::Default, &headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                                    }
+                                    return send_response(stream, 404, Some(response_headers), None, None, None).await
+                                },
+                                Ok(CGIStatus::Unavailable { resource_present_in_endpoints: true, .. }) => {
+                                    resource_present_in_endpoints = true;
+                                },
                                 Err(_) => return bad_gateway(stream).await,
                                 _ => {}
                             }
                         },
                         _ => {}
                     }
-                    handle_post(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                    handle_post(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port, resource_present_in_endpoints).await
                 },
                 Put {resource, params, query_string, headers, data, cgi_data} => {
+                    let mut resource_present_in_endpoints = false;
                     match &CONFIG.cgi {
-                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches('/'))) => {
                             match handle_cgi(stream, &headers, &resource, "PUT", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
-                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) | Ok(CGIStatus::IndexOf) => return Ok(()),
+                                Ok(CGIStatus::Unavailable { not_found_guaranteed: true, resource_present_in_endpoints: false }) => {
+                                    let response_headers: HashMap<String, String> = HashMap::new();
+                                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                                        return not_found(stream, RequestData::Default, &headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                                    }
+                                    return send_response(stream, 404, Some(response_headers), None, None, None).await
+                                },
+                                Ok(CGIStatus::Unavailable { resource_present_in_endpoints: true, .. }) => {
+                                    resource_present_in_endpoints = true;
+                                },
                                 Err(_) => return bad_gateway(stream).await,
                                 _ => {}
                             }
                         },
                         _ => {}
                     }
-                    handle_put(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                    handle_put(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port, resource_present_in_endpoints).await
                 },
                 Delete {resource, params, query_string, headers, data, cgi_data} => {
+                    let mut resource_present_in_endpoints = false;
                     match &CONFIG.cgi {
-                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches('/'))) => {
                             match handle_cgi(stream, &headers, &resource, "DELETE", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
-                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) | Ok(CGIStatus::IndexOf) => return Ok(()),
+                                Ok(CGIStatus::Unavailable { not_found_guaranteed: true, resource_present_in_endpoints: false }) => {
+                                    let response_headers: HashMap<String, String> = HashMap::new();
+                                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                                        return not_found(stream, RequestData::Default, &headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                                    }
+                                    return send_response(stream, 404, Some(response_headers), None, None, None).await
+                                },
+                                Ok(CGIStatus::Unavailable { resource_present_in_endpoints: true, .. }) => {
+                                    resource_present_in_endpoints = true;
+                                },
                                 Err(_) => return bad_gateway(stream).await,
                                 _ => {}
                             }
                         },
                         _ => {}
                     }
-                    handle_delete(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                    handle_delete(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port, resource_present_in_endpoints).await
                 },
                 Options {..} =>
                     handle_options(stream).await,
                 Patch {resource, params, query_string, headers, data, cgi_data} => {
+                    let mut resource_present_in_endpoints = false;
                     match &CONFIG.cgi {
-                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches("/"))) => {
+                        Some(cgi) if cgi.enabled && cgi.should_attempt_cgi(&String::from((&resource).trim_start_matches('/'))) => {
                             match handle_cgi(stream, &headers, &resource, "PATCH", query_string, cgi_data, local_ip, remote_ip, remote_port, https).await {
-                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) => return Ok(()),
+                                Ok(CGIStatus::Available) | Ok(CGIStatus::Denied) | Ok(CGIStatus::IndexOf) => return Ok(()),
+                                Ok(CGIStatus::Unavailable { not_found_guaranteed: true, resource_present_in_endpoints: false }) => {
+                                    let response_headers: HashMap<String, String> = HashMap::new();
+                                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                                        return not_found(stream, RequestData::Default, &headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                                    }
+                                    return send_response(stream, 404, Some(response_headers), None, None, None).await
+                                },
+                                Ok(CGIStatus::Unavailable { resource_present_in_endpoints: true, .. }) => {
+                                    resource_present_in_endpoints = true;
+                                },
                                 Err(_) => return bad_gateway(stream).await,
                                 _ => {}
                             }
                         },
                         _ => {}
                     }
-                    handle_patch(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port).await
+                    handle_patch(stream, &headers, resource, &data, &params, local_ip, remote_ip, remote_port, resource_present_in_endpoints).await
                 },
                 Trace(request) if CONFIG.enable_trace => {
                     let response_headers: HashMap<String, String> = HashMap::from([

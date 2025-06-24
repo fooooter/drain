@@ -22,6 +22,8 @@ use crate::util::ResourceType::{Dynamic, Static};
 #[cfg(feature = "cgi")]
 use crate::cgi::CGIData;
 use crate::endpoints::{endpoint, ENDPOINT_LIBRARY};
+use crate::pages::forbidden::forbidden;
+use crate::pages::not_found::not_found;
 
 pub enum Request {
     Get {
@@ -226,11 +228,13 @@ static FILE_HANDLE_LIMIT: Semaphore = Semaphore::const_new(
 
 pub async fn handle_get<T>(stream: &mut T,
                            headers: &HashMap<String, String>,
-                           mut resource: String,
+                           resource: String,
                            params: &Option<HashMap<String, String>>,
                            local_ip: &IpAddr,
                            remote_ip: &IpAddr,
-                           remote_port: &u16) -> Result<(), Box<dyn Error>>
+                           remote_port: &u16,
+                           #[cfg(feature = "cgi")]
+                           mut resource_present_in_endpoints: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -238,73 +242,125 @@ where
     let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
     #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
-    resource.remove(0);
+    let mut resource = String::from((&resource).trim_start_matches('/'));
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if let Some(access_control) = &CONFIG.access_control {
-        if !access_control.is_access_allowed(&resource) {
-            let mut deny_action = access_control.deny_action;
-            if let Some(library) = &*ENDPOINT_LIBRARY {
-                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-                let content = endpoint(
-                    if deny_action == 404 { "not_found" } else { "forbidden" },
-                    stream,
-                    Get(&None),
-                    headers,
-                    &mut response_headers,
-                    &mut set_cookie,
-                    &mut deny_action,
-                    local_ip,
-                    remote_ip,
-                    remote_port,
-                    library).await;
-                let content_type = response_headers.get("content-type");
-
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+    #[cfg(feature = "cgi")] {
+        if !resource_present_in_endpoints {
+            if let Some(access_control) = &CONFIG.access_control {
+                if !access_control.is_access_allowed(&resource) {
+                    let deny_action = access_control.deny_action;
+                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                        if deny_action == 403u16 {
+                            return forbidden(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return not_found(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
                     }
-
-                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
                 }
-                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
             }
-            return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+
+            if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+                let mut res_tmp = String::from("");
+                for index in CONFIG.indices.iter() {
+                    if Path::new(&format!("{document_root}/{resource}/{index}")).is_file() {
+                        res_tmp = format!("{resource}/{index}");
+                        break;
+                    }
+                }
+
+                if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+                    if CONFIG.should_display_index_of(&resource) {
+                        return index_of(stream, &resource, false, headers).await;
+                    }
+                }
+
+                let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+                if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
+                    match &CONFIG.endpoints {
+                        Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {
+                            resource_present_in_endpoints = true;
+                        },
+                        _ => {
+                            return index_of(stream, &resource, false, headers).await;
+                        }
+                    }
+                }
+
+                resource = res_tmp_trim;
+            }
+
+            if !resource_present_in_endpoints {
+                if let Some(endpoints) = &CONFIG.endpoints {
+                    if endpoints.contains(&resource) {
+                        resource_present_in_endpoints = true;
+                    }
+                }
+            }
         }
     }
 
-    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if Path::new(&format!("{document_root}/{resource}/index.html")).is_file() {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
-        };
+    #[cfg(not(feature = "cgi"))]
+    let mut resource_present_in_endpoints = false;
 
-        let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
-
-        if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
-            match &CONFIG.endpoints {
-                Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
-                _ => {
-                    return index_of(stream, resource, false, headers).await;
+    #[cfg(not(feature = "cgi"))] {
+        if let Some(access_control) = &CONFIG.access_control {
+            if !access_control.is_access_allowed(&resource) {
+                let deny_action = access_control.deny_action;
+                if let Some(library) = &*ENDPOINT_LIBRARY {
+                    if deny_action == 403u16 {
+                        return forbidden(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                    }
+                    return not_found(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
                 }
+                return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
             }
         }
 
-        resource = res_tmp_trim;
+        if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+            let mut res_tmp = String::from("");
+            for index in CONFIG.indices.iter() {
+                if Path::new(&format!("{document_root}/{resource}/{index}")).is_file() {
+                    res_tmp = format!("{resource}/{index}");
+                    break;
+                }
+            }
+
+            if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+                if CONFIG.should_display_index_of(&resource) {
+                    return index_of(stream, &resource, false, headers).await;
+                }
+            }
+
+            let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+            if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
+                match &CONFIG.endpoints {
+                    Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {
+                        resource_present_in_endpoints = true;
+                    },
+                    _ => {
+                        return index_of(stream, &resource, false, headers).await;
+                    }
+                }
+            }
+
+            resource = res_tmp_trim;
+        }
+
+        if !resource_present_in_endpoints {
+            if let Some(endpoints) = &CONFIG.endpoints {
+                if endpoints.contains(&resource) {
+                    resource_present_in_endpoints = true;
+                }
+            }
+        }
     }
 
-    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
-        if endpoints.contains(&resource) {
+    if let Some(library) = &*ENDPOINT_LIBRARY {
+        if resource_present_in_endpoints {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
             let content = endpoint(
@@ -353,7 +409,7 @@ where
                         LibError::DlSym { .. } => {},
                         _ => {
                             eprintln!("[handle_get():{}] An unknown error occurred while executing the endpoint.\
-                                                         Attempting to send Internal Server Error page to the client...", line!());
+                                                             Attempting to send Internal Server Error page to the client...", line!());
                             if let Err(e) = internal_server_error(stream).await {
                                 eprintln!("[handle_get():{}] FAILED. Error information:\n{e}", line!());
                             }
@@ -369,97 +425,73 @@ where
         }
     }
 
-    let _ = FILE_HANDLE_LIMIT.acquire().await?;
-    let file = File::open(format!("{document_root}/{}", &resource)).await;
+    let path = format!("{document_root}/{resource}");
+    let path = Path::new(&path);
+    if path.is_file() {
+        let _ = FILE_HANDLE_LIMIT.acquire().await?;
+        let file = File::open(format!("{document_root}/{}", &resource)).await;
+        match file {
+            Ok(mut f) => {
+                let mut content: Vec<u8> = Vec::new();
+                rte_wrapper(&mut f, &mut content, stream).await;
+                let content_empty = content.is_empty();
 
-    match file {
-        Ok(mut f) => {
-            let mut content: Vec<u8> = Vec::new();
-            rte_wrapper(&mut f, &mut content, stream).await;
-
-            let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
-                (guess.to_string(), guess.type_().to_string())
-            } else {
-                if content.is_utf8() {
-                    (String::from("text/plain"), String::from("text"))
+                let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
+                    (guess.to_string(), guess.type_().to_string())
                 } else {
-                    (String::from("application/octet-stream"), String::from("application"))
+                    if content.is_utf8() {
+                        (String::from("text/plain"), String::from("text"))
+                    } else {
+                        (String::from("application/octet-stream"), String::from("application"))
+                    }
+                };
+
+                if let Some(encoding) = CONFIG.get_response_encoding(&content, &guess, &general_type, headers) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
-            };
 
-            if let Some(encoding) = CONFIG.get_response_encoding(&content, &guess, &general_type, headers) {
-                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-            }
+                response_headers.insert(String::from("Content-Type"), guess);
 
-            response_headers.insert(String::from("Content-Type"), guess);
+                return if content_empty {
+                    send_response(stream, 200, Some(response_headers), None, None, None).await
+                } else {
+                    if let Some(if_none_match) = headers.get("if-none-match") {
+                        let mut excluded_etags = if_none_match.split(",")
+                            .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
 
-            if content.is_empty() {
-                send_response(stream, 200, Some(response_headers), None, None, None).await
-            } else {
-                if let Some(if_none_match) = headers.get("if-none-match") {
-                    let mut excluded_etags = if_none_match.split(",")
-                        .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
+                        let etags = ETAGS.lock().await;
+                        while let Some(etag) = excluded_etags.next() {
+                            if etags.contains(&etag) {
+                                response_headers.insert(String::from("ETag"), etag);
+                                response_headers.insert(String::from("Cache-Control"), format!("max-age={}", CONFIG.cache_max_age));
 
-                    let etags = ETAGS.lock().await;
-                    while let Some(etag) = excluded_etags.next() {
-                        if etags.contains(&etag) {
-                            response_headers.insert(String::from("ETag"), etag);
-                            response_headers.insert(String::from("Cache-Control"), format!("max-age={}", CONFIG.cache_max_age));
-
-                            return send_response(stream, 304, Some(response_headers), None, None, None).await;
+                                return send_response(stream, 304, Some(response_headers), None, None, None).await;
+                            }
                         }
                     }
+                    send_response(stream, 200, Some(response_headers), Some(content), None, Some(Static)).await
                 }
-                send_response(stream, 200, Some(response_headers), Some(content), None, Some(Static)).await
-            }
-        },
-        Err(_) => {
-            if let Some(library) = &*ENDPOINT_LIBRARY {
-                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-                let content = endpoint(
-                    "not_found",
-                    stream,
-                    Get(params),
-                    headers,
-                    &mut response_headers,
-                    &mut set_cookie,
-                    &mut 404u16,
-                    local_ip,
-                    remote_ip,
-                    remote_port,
-                    library).await;
-                let content_type = response_headers.get("content-type");
-
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
-
-                    return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                }
-                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), Some(Dynamic)).await;
-            }
-            send_response(stream, 404, Some(response_headers), None, None, None).await
+            },
+            Err(_) => {}
         }
     }
+
+    if let Some(library) = &*ENDPOINT_LIBRARY {
+        return not_found(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+    }
+    send_response(stream, 404, Some(response_headers), None, None, None).await
 }
 
 pub async fn handle_head<T>(stream: &mut T,
                             headers: &HashMap<String, String>,
-                            mut resource: String,
+                            resource: String,
                             params: &Option<HashMap<String, String>>,
                             local_ip: &IpAddr,
                             remote_ip: &IpAddr,
-                            remote_port: &u16) -> Result<(), Box<dyn Error>>
+                            remote_port: &u16,
+                            #[cfg(feature = "cgi")]
+                            mut resource_present_in_endpoints: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -467,40 +499,113 @@ where
     let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
     #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
-    resource.remove(0);
+    let mut resource = String::from((&resource).trim_start_matches('/'));
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if let Some(access_control) = &CONFIG.access_control {
-        if !access_control.is_access_allowed(&resource) {
-            let deny_action = access_control.deny_action;
-            return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
-        }
-    }
+    #[cfg(feature = "cgi")] {
+        if !resource_present_in_endpoints {
+            if let Some(access_control) = &CONFIG.access_control {
+                if !access_control.is_access_allowed(&resource) {
+                    let deny_action = access_control.deny_action;
+                    return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                }
+            }
 
-    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if Path::new(&format!("{document_root}/{resource}/index.html")).is_file() {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
-        };
+            if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+                let mut res_tmp = String::from("");
+                for index in CONFIG.indices.iter() {
+                    if Path::new(&format!("{document_root}/{resource}/{index}")).is_file() {
+                        res_tmp = format!("{resource}/{index}");
+                        break;
+                    }
+                }
 
-        let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+                if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+                    if CONFIG.should_display_index_of(&resource) {
+                        return index_of(stream, &resource, true, headers).await;
+                    }
+                }
 
-        if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
-            match &CONFIG.endpoints {
-                Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
-                _ => {
-                    return index_of(stream, resource, true, headers).await;
+                let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+                if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
+                    match &CONFIG.endpoints {
+                        Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {
+                            resource_present_in_endpoints = true;
+                        },
+                        _ => {
+                            return index_of(stream, &resource, true, headers).await;
+                        }
+                    }
+                }
+
+                resource = res_tmp_trim;
+            }
+
+            if !resource_present_in_endpoints {
+                if let Some(endpoints) = &CONFIG.endpoints {
+                    if endpoints.contains(&resource) {
+                        resource_present_in_endpoints = true;
+                    }
                 }
             }
         }
-
-        resource = res_tmp_trim;
     }
 
-    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
-        if endpoints.contains(&resource) {
+    #[cfg(not(feature = "cgi"))]
+    let mut resource_present_in_endpoints = false;
+
+    #[cfg(not(feature = "cgi"))] {
+        if let Some(access_control) = &CONFIG.access_control {
+            if !access_control.is_access_allowed(&resource) {
+                let deny_action = access_control.deny_action;
+                return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+            }
+        }
+
+        if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+            let mut res_tmp = String::from("");
+            for index in CONFIG.indices.iter() {
+                if Path::new(&format!("{document_root}/{resource}/{index}")).is_file() {
+                    res_tmp = format!("{resource}/{index}");
+                    break;
+                }
+            }
+
+            if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+                if CONFIG.should_display_index_of(&resource) {
+                    return index_of(stream, &resource, true, headers).await;
+                }
+            }
+
+            let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+            if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
+                match &CONFIG.endpoints {
+                    Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {
+                        resource_present_in_endpoints = true;
+                    },
+                    _ => {
+                        return index_of(stream, &resource, true, headers).await;
+                    }
+                }
+            }
+
+            resource = res_tmp_trim;
+        }
+
+        if !resource_present_in_endpoints {
+            if let Some(endpoints) = &CONFIG.endpoints {
+                if endpoints.contains(&resource) {
+                    resource_present_in_endpoints = true;
+                }
+            }
+        }
+    }
+
+    if let Some(library) = &*ENDPOINT_LIBRARY {
+        if resource_present_in_endpoints {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
             match endpoint(&*resource, stream, Head(params), headers, &mut response_headers, &mut set_cookie, &mut status, local_ip, remote_ip, remote_port, library).await {
@@ -537,37 +642,42 @@ where
         }
     }
 
-    let _ = FILE_HANDLE_LIMIT.acquire().await?;
-    let file = File::open(format!("{document_root}/{}", &resource)).await;
+    let path = format!("{document_root}/{resource}");
+    let path = Path::new(&path);
+    if path.is_file() {
+        let _ = FILE_HANDLE_LIMIT.acquire().await?;
+        let file = File::open(path).await;
 
-    match file {
-        Ok(mut f) => {
-            let mut content: Vec<u8> = Vec::new();
-            rte_wrapper(&mut f, &mut content, stream).await;
+        match file {
+            Ok(mut f) => {
+                let mut content: Vec<u8> = Vec::new();
+                rte_wrapper(&mut f, &mut content, stream).await;
 
-            if content.is_empty() {
-                send_response(stream, 200, None, None, None, None).await
-            } else {
-                let content_length = content.len().to_string();
-                response_headers.insert(String::from("Content-Length"), content_length);
+                return if content.is_empty() {
+                    send_response(stream, 200, None, None, None, None).await
+                } else {
+                    let content_length = content.len().to_string();
+                    response_headers.insert(String::from("Content-Length"), content_length);
 
-                send_response(stream, 200, Some(response_headers), None, None, None).await
-            }
-        },
-        Err(_) => {
-            send_response(stream, 404, Some(response_headers), None, None, None).await
+                    send_response(stream, 200, Some(response_headers), None, None, None).await
+                }
+            },
+            Err(_) => {}
         }
     }
+    send_response(stream, 404, Some(response_headers), None, None, None).await
 }
 
 pub async fn handle_post<'a, T>(stream: &mut T,
                                 headers: &HashMap<String, String>,
-                                mut resource: String,
+                                resource: String,
                                 data: &Option<RequestBody>,
                                 params: &Option<HashMap<String, String>>,
                                 local_ip: &IpAddr,
                                 remote_ip: &IpAddr,
-                                remote_port: &u16) -> Result<(), Box<dyn Error>>
+                                remote_port: &u16,
+                                #[cfg(feature = "cgi")]
+                                mut resource_present_in_endpoints: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -575,73 +685,125 @@ where
     let document_root = if *&*CHROOT {&String::from("")} else {&CONFIG.document_root};
     #[cfg(not(target_family = "unix"))]
     let document_root = &CONFIG.document_root;
-    resource.remove(0);
+    let mut resource = String::from((&resource).trim_start_matches('/'));
 
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
-    if let Some(access_control) = &CONFIG.access_control {
-        if !access_control.is_access_allowed(&resource) {
-            let mut deny_action = access_control.deny_action;
-            if let Some(library) = &*ENDPOINT_LIBRARY {
-                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-                let content = endpoint(
-                    if deny_action == 404 { "not_found" } else { "forbidden" },
-                    stream,
-                    Post { data: &None, params: &None },
-                    headers,
-                    &mut response_headers,
-                    &mut set_cookie,
-                    &mut deny_action,
-                    local_ip,
-                    remote_ip,
-                    remote_port,
-                    library).await;
-                let content_type = response_headers.get("content-type");
-
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+    #[cfg(feature = "cgi")] {
+        if !resource_present_in_endpoints {
+            if let Some(access_control) = &CONFIG.access_control {
+                if !access_control.is_access_allowed(&resource) {
+                    let deny_action = access_control.deny_action;
+                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                        if deny_action == 403u16 {
+                            return forbidden(stream, Post { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return not_found(stream, Post { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
                     }
-
-                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
                 }
-                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
             }
-            return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+
+            if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+                let mut res_tmp = String::from("");
+                for index in CONFIG.indices.iter() {
+                    if Path::new(&format!("{document_root}/{resource}/{index}")).is_file() {
+                        res_tmp = format!("{resource}/{index}");
+                        break;
+                    }
+                }
+
+                if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+                    if CONFIG.should_display_index_of(&resource) {
+                        return index_of(stream, &resource, false, headers).await;
+                    }
+                }
+
+                let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+                if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
+                    match &CONFIG.endpoints {
+                        Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {
+                            resource_present_in_endpoints = true;
+                        },
+                        _ => {
+                            return index_of(stream, &resource, false, headers).await;
+                        }
+                    }
+                }
+
+                resource = res_tmp_trim;
+            }
+
+            if !resource_present_in_endpoints {
+                if let Some(endpoints) = &CONFIG.endpoints {
+                    if endpoints.contains(&resource) {
+                        resource_present_in_endpoints = true;
+                    }
+                }
+            }
         }
     }
 
-    if Path::new(&format!("{document_root}/{resource}")).is_dir() {
-        let res_tmp = if Path::new(&format!("{document_root}/{resource}/index.html")).is_file() {
-            format!("{resource}/index.html")
-        } else {
-            format!("{resource}/index")
-        };
+    #[cfg(not(feature = "cgi"))]
+    let mut resource_present_in_endpoints = false;
 
-        let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
-
-        if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
-            match &CONFIG.endpoints {
-                Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {}
-                _ => {
-                    return index_of(stream, resource, false, headers).await;
+    #[cfg(not(feature = "cgi"))] {
+        if let Some(access_control) = &CONFIG.access_control {
+            if !access_control.is_access_allowed(&resource) {
+                let deny_action = access_control.deny_action;
+                if let Some(library) = &*ENDPOINT_LIBRARY {
+                    if deny_action == 403u16 {
+                        return forbidden(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                    }
+                    return not_found(stream, Get(params), headers, response_headers, local_ip, remote_ip, remote_port, library).await;
                 }
+                return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
             }
         }
 
-        resource = res_tmp_trim;
+        if Path::new(&format!("{document_root}/{resource}")).is_dir() {
+            let mut res_tmp = String::from("");
+            for index in CONFIG.indices.iter() {
+                if Path::new(&format!("{document_root}/{resource}/{index}")).is_file() {
+                    res_tmp = format!("{resource}/{index}");
+                    break;
+                }
+            }
+
+            if Path::new(&format!("{document_root}/{res_tmp}")).is_dir() {
+                if CONFIG.should_display_index_of(&resource) {
+                    return index_of(stream, &resource, false, headers).await;
+                }
+            }
+
+            let res_tmp_trim = String::from(res_tmp.trim_start_matches("/"));
+
+            if !Path::new(&format!("{document_root}/{res_tmp}")).is_file() && CONFIG.should_display_index_of(&resource) {
+                match &CONFIG.endpoints {
+                    Some(endpoints) if (&ENDPOINT_LIBRARY).is_some() && endpoints.contains(&res_tmp_trim) => {
+                        resource_present_in_endpoints = true;
+                    },
+                    _ => {
+                        return index_of(stream, &resource, false, headers).await;
+                    }
+                }
+            }
+
+            resource = res_tmp_trim;
+        }
+
+        if !resource_present_in_endpoints {
+            if let Some(endpoints) = &CONFIG.endpoints {
+                if endpoints.contains(&resource) {
+                    resource_present_in_endpoints = true;
+                }
+            }
+        }
     }
 
-    if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
-        if endpoints.contains(&resource) {
+    if let Some(library) = &*ENDPOINT_LIBRARY {
+        if resource_present_in_endpoints {
             let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
             let mut status: u16 = 200;
             let content = endpoint(
@@ -706,92 +868,65 @@ where
         }
     }
 
-    let _ = FILE_HANDLE_LIMIT.acquire().await?;
-    let file = File::open(format!("{document_root}/{}", &resource)).await;
+    let path = format!("{document_root}/{resource}");
+    let path = Path::new(&path);
+    if path.is_file() {
+        let _ = FILE_HANDLE_LIMIT.acquire().await?;
+        let file = File::open(format!("{document_root}/{}", &resource)).await;
+        match file {
+            Ok(mut f) => {
+                let mut content: Vec<u8> = Vec::new();
+                rte_wrapper(&mut f, &mut content, stream).await;
+                let content_empty = content.is_empty();
 
-    match file {
-        Ok(mut f) => {
-            let mut content: Vec<u8> = Vec::new();
-            rte_wrapper(&mut f, &mut content, stream).await;
-            let content_empty = content.is_empty();
-
-            let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
-                (guess.to_string(), guess.type_().to_string())
-            } else {
-                if content.is_utf8() {
-                    (String::from("text/plain"), String::from("text"))
+                let (guess, general_type) = if let Some(guess) = mime_guess::from_path(resource).first() {
+                    (guess.to_string(), guess.type_().to_string())
                 } else {
-                    (String::from("application/octet-stream"), String::from("application"))
+                    if content.is_utf8() {
+                        (String::from("text/plain"), String::from("text"))
+                    } else {
+                        (String::from("application/octet-stream"), String::from("application"))
+                    }
+                };
+
+                if let Some(encoding) = CONFIG.get_response_encoding(&content, &guess, &general_type, headers) {
+                    response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                    response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
                 }
-            };
 
-            if let Some(encoding) = CONFIG.get_response_encoding(&content, &guess, &general_type, headers) {
-                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-            }
+                response_headers.insert(String::from("Content-Type"), guess);
 
-            response_headers.insert(String::from("Content-Type"), guess);
+                return if content_empty {
+                    send_response(stream, 200, Some(response_headers), None, None, None).await
+                } else {
+                    if let Some(if_none_match) = headers.get("if-none-match") {
+                        let mut excluded_etags = if_none_match.split(",")
+                            .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
 
-            if content_empty {
-                send_response(stream, 200, Some(response_headers), None, None, None).await
-            } else {
-                if let Some(if_none_match) = headers.get("if-none-match") {
-                    let mut excluded_etags = if_none_match.split(",")
-                        .map(|e| e.trim_matches(|x: char| x.is_whitespace() || x == '"').to_string());
+                        let etags = ETAGS.lock().await;
+                        while let Some(etag) = excluded_etags.next() {
+                            if etags.contains(&etag) {
+                                response_headers.insert(String::from("ETag"), etag);
+                                response_headers.insert(String::from("Cache-Control"), format!("max-age={}", CONFIG.cache_max_age));
 
-                    let etags = ETAGS.lock().await;
-                    while let Some(etag) = excluded_etags.next() {
-                        if etags.contains(&etag) {
-                            response_headers.insert(String::from("ETag"), etag);
-                            response_headers.insert(String::from("Cache-Control"), format!("max-age={}", CONFIG.cache_max_age));
-
-                            return send_response(stream, 304, Some(response_headers), None, None, None).await;
+                                return send_response(stream, 304, Some(response_headers), None, None, None).await;
+                            }
                         }
                     }
+                    send_response(stream, 200, Some(response_headers), Some(content), None, Some(Static)).await
                 }
-                send_response(stream, 200, Some(response_headers), Some(content), None, Some(Static)).await
-            }
-        },
-        Err(_) => {
-            if let Some(library) = &*ENDPOINT_LIBRARY {
-                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-                let content = endpoint(
-                    "not_found",
-                    stream,
-                    Post { data, params },
-                    headers,
-                    &mut response_headers,
-                    &mut set_cookie,
-                    &mut 404u16,
-                    local_ip,
-                    remote_ip,
-                    remote_port,
-                    library).await;
-                let content_type = response_headers.get("content-type");
-
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
-
-                    return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                }
-                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
-            }
-            send_response(stream, 404, Some(response_headers), None, None, None).await
+            },
+            Err(_) => {}
         }
     }
+
+    if let Some(library) = &*ENDPOINT_LIBRARY {
+        return not_found(stream, Post { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+    }
+    send_response(stream, 404, Some(response_headers), None, None, None).await
 }
 
-pub async fn handle_options<T>(stream: &mut T) -> Result<(), Box<dyn Error>>
+pub async fn handle_options<T>(stream: &mut T) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -806,152 +941,187 @@ where
 
 pub async fn handle_put<T>(stream: &mut T,
                            headers: &HashMap<String, String>,
-                           mut resource: String,
+                           resource: String,
                            data: &Option<RequestBody>,
                            params: &Option<HashMap<String, String>>,
                            local_ip: &IpAddr,
                            remote_ip: &IpAddr,
-                           remote_port: &u16) -> Result<(), Box<dyn Error>>
+                           remote_port: &u16,
+                           #[cfg(feature = "cgi")]
+                           mut resource_present_in_endpoints: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
     if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
-        resource.remove(0);
+        let resource = String::from((&resource).trim_start_matches('/'));
 
-        if let Some(access_control) = &CONFIG.access_control {
-            if !access_control.is_access_allowed(&resource) {
-                let mut deny_action = access_control.deny_action;
+        #[cfg(feature = "cgi")] {
+            if !resource_present_in_endpoints {
+                if let Some(access_control) = &CONFIG.access_control {
+                    if !access_control.is_access_allowed(&resource) {
+                        let deny_action = access_control.deny_action;
+                        if let Some(library) = &*ENDPOINT_LIBRARY {
+                            if deny_action == 403u16 {
+                                return forbidden(stream, Put { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                            }
+                            return not_found(stream, Put { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                    }
+                }
+
+                if endpoints.contains(&resource) {
+                    resource_present_in_endpoints = true;
+                }
+            }
+
+            if resource_present_in_endpoints {
                 let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let mut status: u16 = 200;
                 let content = endpoint(
-                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    &*resource,
                     stream,
-                    Put { data: &None, params: &None },
+                    Put { data, params },
                     headers,
                     &mut response_headers,
                     &mut set_cookie,
-                    &mut deny_action,
+                    &mut status,
                     local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
+                match (content, content_type) {
+                    (Ok(Some(c)), Some(c_t)) => {
+                        let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                            (mime.to_string(), mime.type_().to_string())
+                        } else {
+                            response_headers.remove(&String::from("content-type"));
+                            return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                        };
 
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
+                        if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                            response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                            response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                        }
 
-                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                }
-                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-            }
-        }
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                        }
 
-        if endpoints.contains(&resource) {
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let mut status: u16 = 200;
-            let content = endpoint(
-                &*resource,
-                stream,
-                Put {data, params},
-                headers,
-                &mut response_headers,
-                &mut set_cookie,
-                &mut status,
-                local_ip,
-                remote_ip,
-                remote_port,
-                library).await;
-            let content_type = response_headers.get("content-type");
+                        return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    },
+                    (Ok(None), _) | (Ok(Some(_)), None) => {
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                        }
 
-            match (content, content_type) {
-                (Ok(Some(c)), Some(c_t)) => {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
                         return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
-
-                    if response_headers.contains_key("location") {
-                        return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                    }
-
-                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                },
-                (Ok(None), _) | (Ok(Some(_)), None) => {
-                    if response_headers.contains_key("location") {
-                        return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
-                    }
-
-                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
-                },
-                (Err(e), _) => {
-                    match e {
-                        LibError::DlSym { .. } => {},
-                        _ => {
-                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
-                                                          Attempting to send Internal Server Error page to the client...", line!());
-                            if let Err(e) = internal_server_error(stream).await {
-                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                    },
+                    (Err(e), _) => {
+                        match e {
+                            LibError::DlSym { .. } => {},
+                            _ => {
+                                eprintln!("[handle_put():{}] An unknown error occurred while executing the endpoint.\
+                                                                Attempting to send Internal Server Error page to the client...", line!());
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[handle_put():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[handle_put():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred while handling connection.");
                             }
-                            eprintln!("Attempting to close connection...");
-                            if let Err(e) = stream.shutdown().await {
-                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
-                            }
-                            panic!("Unrecoverable error occurred while handling connection.");
                         }
                     }
                 }
             }
         }
 
-        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = endpoint(
-            "not_found",
-            stream,
-            Put { data, params },
-            headers,
-            &mut response_headers,
-            &mut set_cookie,
-            &mut 404u16,
-            local_ip,
-            remote_ip,
-            remote_port,
-            library).await;
-        let content_type = response_headers.get("content-type");
-
-        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                (mime.to_string(), mime.type_().to_string())
-            } else {
-                response_headers.remove(&String::from("content-type"));
-                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
-            };
-
-            if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+        #[cfg(not(feature = "cgi"))] {
+            if let Some(access_control) = &CONFIG.access_control {
+                if !access_control.is_access_allowed(&resource) {
+                    let deny_action = access_control.deny_action;
+                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                        if deny_action == 403u16 {
+                            return forbidden(stream, Put { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return not_found(stream, Put { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                    }
+                    return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                }
             }
 
-            return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+            if endpoints.contains(&resource) {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let mut status: u16 = 200;
+                let content = endpoint(
+                    &*resource,
+                    stream,
+                    Put { data, params },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut status,
+                    local_ip,
+                    remote_ip,
+                    remote_port,
+                    library).await;
+                let content_type = response_headers.get("content-type");
+
+                match (content, content_type) {
+                    (Ok(Some(c)), Some(c_t)) => {
+                        let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                            (mime.to_string(), mime.type_().to_string())
+                        } else {
+                            response_headers.remove(&String::from("content-type"));
+                            return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                        };
+
+                        if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                            response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                            response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                        }
+
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                        }
+
+                        return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    },
+                    (Ok(None), _) | (Ok(Some(_)), None) => {
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                        }
+
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                    },
+                    (Err(e), _) => {
+                        match e {
+                            LibError::DlSym { .. } => {},
+                            _ => {
+                                eprintln!("[handle_put():{}] An unknown error occurred while executing the endpoint.\
+                                                                Attempting to send Internal Server Error page to the client...", line!());
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[handle_put():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[handle_put():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred while handling connection.");
+                            }
+                        }
+                    }
+                }
+            }
         }
-        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+
+        return not_found(stream, Put { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
     }
 
     response_headers = HashMap::from([
@@ -963,151 +1133,187 @@ where
 
 pub async fn handle_delete<T>(stream: &mut T,
                               headers: &HashMap<String, String>,
-                              mut resource: String,
+                              resource: String,
                               data: &Option<RequestBody>,
                               params: &Option<HashMap<String, String>>,
                               local_ip: &IpAddr,
                               remote_ip: &IpAddr,
-                              remote_port: &u16) -> Result<(), Box<dyn Error>>
+                              remote_port: &u16,
+                              #[cfg(feature = "cgi")]
+                              mut resource_present_in_endpoints: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
     if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
-        resource.remove(0);
+        let resource = String::from((&resource).trim_start_matches('/'));
 
-        if let Some(access_control) = &CONFIG.access_control {
-            if !access_control.is_access_allowed(&resource) {
-                let mut deny_action = access_control.deny_action;
+        #[cfg(feature = "cgi")] {
+            if !resource_present_in_endpoints {
+                if let Some(access_control) = &CONFIG.access_control {
+                    if !access_control.is_access_allowed(&resource) {
+                        let deny_action = access_control.deny_action;
+                        if let Some(library) = &*ENDPOINT_LIBRARY {
+                            if deny_action == 403u16 {
+                                return forbidden(stream, Delete { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                            }
+                            return not_found(stream, Delete { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                    }
+                }
+
+                if endpoints.contains(&resource) {
+                    resource_present_in_endpoints = true;
+                }
+            }
+
+            if resource_present_in_endpoints {
                 let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let mut status: u16 = 200;
                 let content = endpoint(
-                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    &*resource,
                     stream,
-                    Delete { data: &None, params: &None },
+                    Delete { data, params },
                     headers,
                     &mut response_headers,
                     &mut set_cookie,
-                    &mut deny_action,
+                    &mut status,
                     local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
+                match (content, content_type) {
+                    (Ok(Some(c)), Some(c_t)) => {
+                        let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                            (mime.to_string(), mime.type_().to_string())
+                        } else {
+                            response_headers.remove(&String::from("content-type"));
+                            return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                        };
 
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
+                        if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                            response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                            response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                        }
 
-                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                }
-                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-            }
-        }
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                        }
 
-        if endpoints.contains(&resource) {
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let mut status: u16 = 200;
-            let content = endpoint(
-                &*resource,
-                stream,
-                Delete {data, params},
-                headers,
-                &mut response_headers,
-                &mut set_cookie,
-                &mut status,
-                local_ip,
-                remote_ip,
-                remote_port,
-                library).await;
-            let content_type = response_headers.get("content-type");
+                        return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    },
+                    (Ok(None), _) | (Ok(Some(_)), None) => {
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                        }
 
-            match (content, content_type) {
-                (Ok(Some(c)), Some(c_t)) => {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
                         return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
-
-                    if response_headers.contains_key("location") {
-                        return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                    }
-
-                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                },
-                (Ok(None), _) | (Ok(Some(_)), None) => {
-                    if response_headers.contains_key("location") {
-                        return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
-                    }
-
-                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
-                },
-                (Err(e), _) => {
-                    match e {
-                        LibError::DlSym { .. } => {},
-                        _ => {
-                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
-                                                          Attempting to send Internal Server Error page to the client...", line!());
-                            if let Err(e) = internal_server_error(stream).await {
-                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                    },
+                    (Err(e), _) => {
+                        match e {
+                            LibError::DlSym { .. } => {},
+                            _ => {
+                                eprintln!("[handle_delete():{}] An unknown error occurred while executing the endpoint.\
+                                                                Attempting to send Internal Server Error page to the client...", line!());
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[handle_delete():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[handle_delete():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred while handling connection.");
                             }
-                            eprintln!("Attempting to close connection...");
-                            if let Err(e) = stream.shutdown().await {
-                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
-                            }
-                            panic!("Unrecoverable error occurred while handling connection.");
                         }
                     }
                 }
             }
         }
 
-        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = endpoint(
-            "not_found",
-            stream,
-            Delete { data, params },
-            headers, &mut response_headers,
-            &mut set_cookie,
-            &mut 404u16,
-            local_ip,
-            remote_ip,
-            remote_port,
-            library).await;
-        let content_type = response_headers.get("content-type");
-
-        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                (mime.to_string(), mime.type_().to_string())
-            } else {
-                response_headers.remove(&String::from("content-type"));
-                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
-            };
-
-            if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+        #[cfg(not(feature = "cgi"))] {
+            if let Some(access_control) = &CONFIG.access_control {
+                if !access_control.is_access_allowed(&resource) {
+                    let deny_action = access_control.deny_action;
+                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                        if deny_action == 403u16 {
+                            return forbidden(stream, Delete { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return not_found(stream, Delete { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                    }
+                    return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                }
             }
 
-            return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+            if endpoints.contains(&resource) {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let mut status: u16 = 200;
+                let content = endpoint(
+                    &*resource,
+                    stream,
+                    Delete { data, params },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut status,
+                    local_ip,
+                    remote_ip,
+                    remote_port,
+                    library).await;
+                let content_type = response_headers.get("content-type");
+
+                match (content, content_type) {
+                    (Ok(Some(c)), Some(c_t)) => {
+                        let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                            (mime.to_string(), mime.type_().to_string())
+                        } else {
+                            response_headers.remove(&String::from("content-type"));
+                            return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                        };
+
+                        if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                            response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                            response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                        }
+
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                        }
+
+                        return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    },
+                    (Ok(None), _) | (Ok(Some(_)), None) => {
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                        }
+
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                    },
+                    (Err(e), _) => {
+                        match e {
+                            LibError::DlSym { .. } => {},
+                            _ => {
+                                eprintln!("[handle_delete():{}] An unknown error occurred while executing the endpoint.\
+                                                                Attempting to send Internal Server Error page to the client...", line!());
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[handle_delete():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[handle_delete():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred while handling connection.");
+                            }
+                        }
+                    }
+                }
+            }
         }
-        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+
+        return not_found(stream, Delete { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
     }
 
     response_headers = HashMap::from([
@@ -1119,152 +1325,187 @@ where
 
 pub async fn handle_patch<T>(stream: &mut T,
                              headers: &HashMap<String, String>,
-                             mut resource: String,
+                             resource: String,
                              data: &Option<RequestBody>,
                              params: &Option<HashMap<String, String>>,
                              local_ip: &IpAddr,
                              remote_ip: &IpAddr,
-                             remote_port: &u16) -> Result<(), Box<dyn Error>>
+                             remote_port: &u16,
+                             #[cfg(feature = "cgi")]
+                             mut resource_present_in_endpoints: bool) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
     let mut response_headers: HashMap<String, String> = HashMap::new();
 
     if let (Some(endpoints), Some(library)) = (&CONFIG.endpoints, &*ENDPOINT_LIBRARY) {
-        resource.remove(0);
+        let resource = String::from((&resource).trim_start_matches('/'));
 
-        if let Some(access_control) = &CONFIG.access_control {
-            if !access_control.is_access_allowed(&resource) {
-                let mut deny_action = access_control.deny_action;
+        #[cfg(feature = "cgi")] {
+            if !resource_present_in_endpoints {
+                if let Some(access_control) = &CONFIG.access_control {
+                    if !access_control.is_access_allowed(&resource) {
+                        let deny_action = access_control.deny_action;
+                        if let Some(library) = &*ENDPOINT_LIBRARY {
+                            if deny_action == 403u16 {
+                                return forbidden(stream, Patch { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                            }
+                            return not_found(stream, Patch { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                    }
+                }
+
+                if endpoints.contains(&resource) {
+                    resource_present_in_endpoints = true;
+                }
+            }
+
+            if resource_present_in_endpoints {
                 let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let mut status: u16 = 200;
                 let content = endpoint(
-                    if deny_action == 404 { "not_found" } else { "forbidden" },
+                    &*resource,
                     stream,
-                    Patch { data: &None, params: &None },
+                    Patch { data, params },
                     headers,
                     &mut response_headers,
                     &mut set_cookie,
-                    &mut deny_action,
+                    &mut status,
                     local_ip,
                     remote_ip,
                     remote_port,
                     library).await;
                 let content_type = response_headers.get("content-type");
 
-                if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
-                        return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
+                match (content, content_type) {
+                    (Ok(Some(c)), Some(c_t)) => {
+                        let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                            (mime.to_string(), mime.type_().to_string())
+                        } else {
+                            response_headers.remove(&String::from("content-type"));
+                            return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                        };
 
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
+                        if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                            response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                            response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                        }
 
-                    return send_response(stream, deny_action, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                }
-                return send_response(stream, deny_action, Some(response_headers), None, Some(set_cookie), None).await;
-            }
-        }
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                        }
 
-        if endpoints.contains(&resource) {
-            let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-            let mut status: u16 = 200;
-            let content = endpoint(
-                &*resource,
-                stream,
-                Patch {data, params},
-                headers,
-                &mut response_headers,
-                &mut set_cookie,
-                &mut status,
-                local_ip,
-                remote_ip,
-                remote_port,
-                library).await;
-            let content_type = response_headers.get("content-type");
+                        return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    },
+                    (Ok(None), _) | (Ok(Some(_)), None) => {
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                        }
 
-            match (content, content_type) {
-                (Ok(Some(c)), Some(c_t)) => {
-                    let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                        (mime.to_string(), mime.type_().to_string())
-                    } else {
-                        response_headers.remove(&String::from("content-type"));
                         return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
-                    };
-
-                    if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                        response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                        response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
-                    }
-
-                    if response_headers.contains_key("location") {
-                        return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                    }
-
-                    return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
-                },
-                (Ok(None), _) | (Ok(Some(_)), None) => {
-                    if response_headers.contains_key("location") {
-                        return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
-                    }
-
-                    return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
-                },
-                (Err(e), _) => {
-                    match e {
-                        LibError::DlSym { .. } => {},
-                        _ => {
-                            eprintln!("[handle_post():{}] An unknown error occurred while executing the endpoint.\
+                    },
+                    (Err(e), _) => {
+                        match e {
+                            LibError::DlSym { .. } => {},
+                            _ => {
+                                eprintln!("[handle_patch():{}] An unknown error occurred while executing the endpoint.\
                                                           Attempting to send Internal Server Error page to the client...", line!());
-                            if let Err(e) = internal_server_error(stream).await {
-                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[handle_patch():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[handle_patch():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred while handling connection.");
                             }
-                            eprintln!("Attempting to close connection...");
-                            if let Err(e) = stream.shutdown().await {
-                                eprintln!("[handle_post():{}] FAILED. Error information:\n{e}", line!());
-                            }
-                            panic!("Unrecoverable error occurred while handling connection.");
                         }
                     }
                 }
             }
         }
 
-        let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
-        let content = endpoint(
-            "not_found",
-            stream,
-            Patch { data, params },
-            headers,
-            &mut response_headers,
-            &mut set_cookie,
-            &mut 404u16,
-            local_ip,
-            remote_ip,
-            remote_port,
-            library).await;
-        let content_type = response_headers.get("content-type");
-
-        if let (Ok(Some(c)), Some(c_t)) = (content, content_type) {
-            let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
-                (mime.to_string(), mime.type_().to_string())
-            } else {
-                response_headers.remove(&String::from("content-type"));
-                return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
-            };
-
-            if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
-                response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
-                response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+        #[cfg(not(feature = "cgi"))] {
+            if let Some(access_control) = &CONFIG.access_control {
+                if !access_control.is_access_allowed(&resource) {
+                    let deny_action = access_control.deny_action;
+                    if let Some(library) = &*ENDPOINT_LIBRARY {
+                        if deny_action == 403u16 {
+                            return forbidden(stream, Patch { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                        }
+                        return not_found(stream, Patch { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
+                    }
+                    return send_response(stream, deny_action, Some(response_headers), None, None, None).await;
+                }
             }
 
-            return send_response(stream, 404, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+            if endpoints.contains(&resource) {
+                let mut set_cookie: HashMap<String, SetCookie> = HashMap::new();
+                let mut status: u16 = 200;
+                let content = endpoint(
+                    &*resource,
+                    stream,
+                    Patch { data, params },
+                    headers,
+                    &mut response_headers,
+                    &mut set_cookie,
+                    &mut status,
+                    local_ip,
+                    remote_ip,
+                    remote_port,
+                    library).await;
+                let content_type = response_headers.get("content-type");
+
+                match (content, content_type) {
+                    (Ok(Some(c)), Some(c_t)) => {
+                        let (mime_type, general_type) = if let Ok(mime) = Mime::from_str(c_t) {
+                            (mime.to_string(), mime.type_().to_string())
+                        } else {
+                            response_headers.remove(&String::from("content-type"));
+                            return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                        };
+
+                        if let Some(encoding) = CONFIG.get_response_encoding(&c, &mime_type, &general_type, headers) {
+                            response_headers.insert(String::from("Content-Encoding"), String::from(encoding));
+                            response_headers.insert(String::from("Vary"), String::from("Accept-Encoding"));
+                        }
+
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                        }
+
+                        return send_response(stream, status, Some(response_headers), Some(c), Some(set_cookie), Some(Dynamic)).await;
+                    },
+                    (Ok(None), _) | (Ok(Some(_)), None) => {
+                        if response_headers.contains_key("location") {
+                            return send_response(stream, 302, Some(response_headers), None, Some(set_cookie), None).await;
+                        }
+
+                        return send_response(stream, status, Some(response_headers), None, Some(set_cookie), None).await;
+                    },
+                    (Err(e), _) => {
+                        match e {
+                            LibError::DlSym { .. } => {},
+                            _ => {
+                                eprintln!("[handle_patch():{}] An unknown error occurred while executing the endpoint.\
+                                                               Attempting to send Internal Server Error page to the client...", line!());
+                                if let Err(e) = internal_server_error(stream).await {
+                                    eprintln!("[handle_patch():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                eprintln!("Attempting to close connection...");
+                                if let Err(e) = stream.shutdown().await {
+                                    eprintln!("[handle_patch():{}] FAILED. Error information:\n{e}", line!());
+                                }
+                                panic!("Unrecoverable error occurred while handling connection.");
+                            }
+                        }
+                    }
+                }
+            }
         }
-        return send_response(stream, 404, Some(response_headers), None, Some(set_cookie), None).await;
+
+        return not_found(stream, Patch { data, params }, headers, response_headers, local_ip, remote_ip, remote_port, library).await;
     }
 
     response_headers = HashMap::from([

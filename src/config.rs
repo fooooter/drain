@@ -56,7 +56,8 @@ pub struct Config {
     pub encoding: Option<Encoding>,
     pub document_root: String,
     pub server_root: String,
-    index_page_rules: Option<HashMap<String, bool>>,
+    index_of_page_rules: Option<HashMap<String, bool>>,
+    pub indices: Vec<String>,
     pub https: Option<Https>,
     #[cfg(target_family = "unix")]
     #[serde(default)]
@@ -215,7 +216,7 @@ impl Config {
         #[cfg(not(target_family = "unix"))]
         let document_root = &CONFIG.document_root;
 
-        if let Some(index_of_rules) = &self.index_page_rules {
+        if let Some(index_of_rules) = &self.index_of_page_rules {
             for (k, v) in index_of_rules {
                 if let Ok(paths) = glob(&*format!("{document_root}/{k}")) {
                     for entry in paths.filter_map(Result::ok) {
@@ -270,11 +271,10 @@ impl AccessControl {
 
 impl Https {
     pub fn configure_ssl(&self) -> Result<SslContext, ErrorStack> {
-        let server_root = &CONFIG.server_root;
         let mut ssl_ctx_builder = SslContext::builder(SslMethod::tls())?;
 
-        ssl_ctx_builder.set_private_key_file(format!("{}/{}", server_root, &self.ssl_private_key_file), SslFiletype::PEM)?;
-        ssl_ctx_builder.set_certificate_file(format!("{}/{}", server_root, &self.ssl_certificate_file), SslFiletype::PEM)?;
+        ssl_ctx_builder.set_private_key_file(format!("{}", &self.ssl_private_key_file), SslFiletype::PEM)?;
+        ssl_ctx_builder.set_certificate_file(format!("{}", &self.ssl_certificate_file), SslFiletype::PEM)?;
         ssl_ctx_builder.check_private_key()?;
 
         ssl_ctx_builder.set_min_proto_version(

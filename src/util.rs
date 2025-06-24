@@ -68,7 +68,7 @@ pub async fn send_response<T>(stream: &mut T,
                               local_response_headers: Option<HashMap<String, String>>,
                               content: Option<Vec<u8>>,
                               set_cookie: Option<HashMap<String, SetCookie>>,
-                              resource_type: Option<ResourceType>) -> Result<(), Box<dyn Error>>
+                              resource_type: Option<ResourceType>) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {

@@ -8,7 +8,7 @@ use crate::util::send_response;
 #[cfg(target_family = "unix")]
 use crate::util::CHROOT;
 
-pub async fn index_of<T>(mut stream: &mut T, directory: String, head: bool, headers: &HashMap<String, String>) -> Result<(), Box<dyn Error>>
+pub async fn index_of<T>(mut stream: &mut T, directory: &String, head: bool, headers: &HashMap<String, String>) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {

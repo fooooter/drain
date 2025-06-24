@@ -4,7 +4,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::util::ResourceType::Dynamic;
 use crate::util::send_response;
 
-pub async fn bad_gateway<T>(mut stream: &mut T) -> Result<(), Box<dyn Error>>
+pub async fn bad_gateway<T>(mut stream: &mut T) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {

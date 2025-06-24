@@ -17,6 +17,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::time::Duration;
+#[cfg(feature = "cgi")]
 use drain_common::RequestData;
 #[cfg(target_family = "unix")]
 use fork::{fork, Fork};
@@ -39,6 +40,7 @@ use crate::error::ServerError;
 #[cfg(feature = "cgi")]
 use crate::pages::bad_gateway::bad_gateway;
 use crate::pages::internal_server_error::internal_server_error;
+#[cfg(feature = "cgi")]
 use crate::pages::not_found::not_found;
 use crate::ssl::{SslInfo, SSL};
 use crate::util::ResourceType::Dynamic;
